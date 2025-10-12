@@ -18,6 +18,13 @@ import libero.libero.envs.bddl_utils as BDDLUtils
 from libero.libero.envs import *
 
 
+class CannotFindPathError(Exception):
+    pass
+
+class CannotFindValidLocationError(Exception):
+    pass
+
+
 def collect_human_trajectory(
     env, device, arm, env_configuration, problem_info, remove_directory=[]
 ):
@@ -40,7 +47,117 @@ def collect_human_trajectory(
             reset_success = True
         except:
             continue
+        
+    sim = env.env.env.sim
+    real_env = env.env.env
+    
+    def get_qpos(joint_name):
+        qpos_addr = sim.model.get_joint_qpos_addr(joint_name)
+        return sim.data.qpos[qpos_addr[0] : qpos_addr[1]].copy()
+    
+    def find_new_place(obj):
+        other_objects = [o for o in real_env.objects_dict.values() if o.name != obj.name]
+        x_min = -0.2 - 0.3 + obj.horizontal_radius
+        x_max = -0.2 + 0.3 - obj.horizontal_radius
+        y_min = 0.0 - 0.6 + obj.horizontal_radius
+        y_max = 0.0 + 0.6 - obj.horizontal_radius
 
+        obj_x, obj_y, _ = get_qpos(obj.joints[0])[:3]
+        
+        for _ in range(500):
+            x = np.random.uniform(x_min, x_max)
+            y = np.random.uniform(y_min, y_max)
+            assert len(obj.joints) == 1
+            z = get_qpos(obj.joints[0])[2]
+            
+            location_valid = True
+            for other_obj in other_objects:
+                assert other_obj.name != obj.name
+                assert len(other_obj.joints) == 1
+                ox, oy, oz = get_qpos(other_obj.joints[0])[:3]
+                if (
+                    np.linalg.norm((x - ox, y - oy))
+                    <= other_obj.horizontal_radius + obj.horizontal_radius + 0.02
+                ) and (
+                    z - z <= other_obj.top_offset[-1] - obj.bottom_offset[-1]
+                ):
+                    location_valid = False
+                    break
+                
+            if np.linalg.norm((x - obj_x, y - obj_y)) <= 0.3:
+                location_valid = False
+                break
+
+            if location_valid:
+                break
+                
+        if not location_valid:
+            raise CannotFindValidLocationError("Cannot find a valid location to place the object")
+            
+        return (x, y, z)
+
+    def find_path(interest_obj, new_x, new_y, show_animation=False):
+        scale = 100.0
+        import sys
+        sys.path.append("./PythonRobotics/PathPlanning/RRTStar/")
+        from rrt_star import RRTStar
+        other_objects = [o for o in real_env.objects_dict.values() if o.name != interest_obj.name]
+        assert len(other_objects) == len(real_env.objects_dict) - 1
+        obstacle_list = []
+        for other_obj in other_objects:
+            assert len(other_obj.joints) == 1
+            ox, oy, oz = get_qpos(other_obj.joints[0])[:3]
+            obstacle_list.append((ox * scale, oy * scale, scale * (other_obj.horizontal_radius + 0.02)))
+        
+        rrt_star = RRTStar(
+            start=get_qpos(interest_obj.joints[0])[:2] * scale,
+            goal=np.array([new_x, new_y]) * scale,
+            rand_area=np.array([-0.2 - 0.3, -0.2 + 0.3, 0.0 - 0.6, 0.0 + 0.6]) * scale,
+            obstacle_list=obstacle_list,
+            expand_dis=30,
+            robot_radius=(interest_obj.horizontal_radius + 0.02) * scale,
+            # path_resolution=0.05,
+            max_iter=1000,
+        )
+
+        path = rrt_star.planning(animation=show_animation)
+        
+        if path is None:
+            raise CannotFindPathError("Cannot find a path for the object to move")
+        else:
+            print("found path with length", len(path))
+        
+        if show_animation:
+            import matplotlib.pyplot as plt
+            rrt_star.draw_graph()
+            plt.plot([x for (x, y) in path], [y for (x, y) in path], '-r')
+            plt.grid(True)
+            plt.show()
+        
+        return np.array(path) / scale
+    
+    sim = env.env.env.sim
+    interest_obj_name = 'akita_black_bowl_1'
+    interest_obj = env.env.env.objects_dict[interest_obj_name]
+    
+    new_x, new_y, _ = find_new_place(interest_obj)
+    path = find_path(interest_obj, new_x, new_y)
+    
+    distance = np.linalg.norm(path[1:] - path[:-1], axis=1).sum()
+    steps = 60
+    velocity = distance / steps
+
+    frame_path = []
+    for i in range(len(path)-1):
+        n_points = int(np.linalg.norm(path[i+1] - path[i]) / velocity)
+        xs = np.linspace(path[i][0], path[i+1][0], n_points)
+        ys = np.linspace(path[i][1], path[i+1][1], n_points)
+        if i > 0:
+            xs = xs[1:]
+            ys = ys[1:]
+        frame_path.append(np.stack([xs, ys], axis=1))
+    frame_path = np.concatenate(frame_path, axis=0)
+    
     # ID = 2 always corresponds to agentview
     env.render()
 
@@ -52,8 +169,15 @@ def collect_human_trajectory(
     # Loop until we get a reset from the input or the task completes
     saving = True
     count = 0
-
+    
     while True:
+        if 5 <= count < len(frame_path) + 5:
+            for joint in interest_obj.joints:
+                qpos_addr = sim.model.get_joint_qpos_addr(joint)
+                qpos = sim.data.qpos[qpos_addr[0] : qpos_addr[1]].copy()
+                qpos[:2] = frame_path[count - 5]
+                sim.data.qpos[qpos_addr[0] : qpos_addr[1]] = qpos
+
         count += 1
         # Set active robot
         active_robot = (
@@ -312,9 +436,6 @@ if __name__ == "__main__":
         device = Keyboard(
             pos_sensitivity=args.pos_sensitivity, rot_sensitivity=args.rot_sensitivity
         )
-        env.viewer.add_keypress_callback("any", device.on_press)
-        env.viewer.add_keyup_callback("any", device.on_release)
-        env.viewer.add_keyrepeat_callback("any", device.on_press)
     elif args.device == "spacemouse":
         from robosuite.devices import SpaceMouse
 
@@ -345,9 +466,14 @@ if __name__ == "__main__":
     i = 0
     while i < args.num_demonstration:
         print(i)
-        saving = collect_human_trajectory(
-            env, device, args.arm, args.config, problem_info, remove_directory
-        )
+        try:
+            saving = collect_human_trajectory(
+                env, device, args.arm, args.config, problem_info, remove_directory
+            )
+        except (CannotFindPathError, CannotFindValidLocationError) as e:
+            print(e)
+            continue
+
         if saving:
             print(remove_directory)
             gather_demonstrations_as_hdf5(

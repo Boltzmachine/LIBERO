@@ -560,6 +560,10 @@ class BDDLBaseDomain(SingleArmEnv):
         return sensors, names
 
     def _add_placement_initializer(self):
+        sample_objects_togther = True
+        if sample_objects_togther:
+            from collections import defaultdict
+            togther_object_names = defaultdict(list)
 
         mapping_inv = {}
         for k, values in self.parsed_problem["fixtures"].items():
@@ -615,19 +619,22 @@ class BDDLBaseDomain(SingleArmEnv):
                     )
                     self.placement_initializer.append_sampler(fixture_sampler)
                 else:
-                    # This is to place movable objects.
-                    region_sampler = get_region_samplers(
-                        problem_name, mapping_inv[target_name]
-                    )(
-                        object_name,
-                        self.objects_dict[object_name],
-                        x_ranges=x_ranges,
-                        y_ranges=y_ranges,
-                        rotation=self.objects_dict[object_name].rotation,
-                        rotation_axis=self.objects_dict[object_name].rotation_axis,
-                        reference_pos=self.workspace_offset,
-                    )
-                    self.placement_initializer.append_sampler(region_sampler)
+                    if sample_objects_togther:
+                        togther_object_names[region_name].append(object_name)
+                    else:
+                        # This is to place movable objects.
+                        region_sampler = get_region_samplers(
+                            problem_name, mapping_inv[target_name]
+                        )(
+                            object_name,
+                            self.objects_dict[object_name],
+                            x_ranges=x_ranges,
+                            y_ranges=y_ranges,
+                            rotation=self.objects_dict[object_name].rotation,
+                            rotation_axis=self.objects_dict[object_name].rotation_axis,
+                            reference_pos=self.workspace_offset,
+                        )
+                        self.placement_initializer.append_sampler(region_sampler)
             if state[0] in ["open", "close"]:
                 # If "open" is implemented, we assume "close" is also implemented
                 if state[1] in self.object_states_dict and hasattr(
@@ -670,6 +677,23 @@ class BDDLBaseDomain(SingleArmEnv):
                         joint_ranges=joint_ranges,
                     )
                     self.object_property_initializers.append(property_initializer)
+                    
+        if sample_objects_togther:
+            for region_name, object_names in togther_object_names.items():
+                target_name = regions[region_name]["target"]
+                x_ranges, y_ranges = rectangle2xyrange(regions[region_name]["ranges"])
+                region_sampler = get_region_samplers(
+                    problem_name, mapping_inv[target_name]
+                )(
+                    region_name,
+                    [self.objects_dict[name] for name in object_names],
+                    x_ranges=x_ranges,
+                    y_ranges=y_ranges,
+                    rotation=[self.objects_dict[name].rotation for name in object_names],
+                    rotation_axis=[self.objects_dict[name].rotation_axis for name in object_names],
+                    reference_pos=self.workspace_offset,
+                )
+                self.placement_initializer.append_sampler(region_sampler)
 
         # Place objects that are on sites
         for state in conditioned_initial_place_state_on_sites:

@@ -167,7 +167,7 @@ class MultiRegionRandomSampler(ObjectPositionSampler):
             )
 
         # Sample pos and quat for all objects assigned to this sampler
-        for obj in self.mujoco_objects:
+        for i_obj, obj in enumerate(self.mujoco_objects):
             # First make sure the currently sampled object hasn't already been sampled
             assert (
                 obj.name not in placed_objects
@@ -190,7 +190,7 @@ class MultiRegionRandomSampler(ObjectPositionSampler):
                     for (x, y, z), _, other_obj in placed_objects.values():
                         if (
                             np.linalg.norm((object_x - x, object_y - y))
-                            <= other_obj.horizontal_radius + horizontal_radius
+                            <= other_obj.horizontal_radius + horizontal_radius + 0.05
                         ) and (
                             object_z - z <= other_obj.top_offset[-1] - bottom_offset[-1]
                         ):
@@ -199,7 +199,7 @@ class MultiRegionRandomSampler(ObjectPositionSampler):
 
                 if location_valid:
                     # random rotation
-                    quat = self._sample_quat()
+                    quat = self._sample_quat(self.rotation[i_obj], self.rotation_axis[i_obj])
 
                     # multiply this quat by the object's initial rotation if it has the attribute specified
                     if hasattr(obj, "init_quat"):
@@ -210,7 +210,7 @@ class MultiRegionRandomSampler(ObjectPositionSampler):
                     placed_objects[obj.name] = (pos, quat, obj)
                     success = True
                     break
-
+                
             if not success:
                 raise RandomizationError("Cannot place all objects ):")
 

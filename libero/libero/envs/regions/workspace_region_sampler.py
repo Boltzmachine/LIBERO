@@ -122,7 +122,7 @@ class Libero100TableRegionSampler(MultiRegionRandomSampler):
             z_offset,
         )
 
-    def _sample_quat(self):
+    def _sample_quat(self, rotation=None, rotation_axis=None):
         """
         Samples the orientation for a given object
         Add multiple rotation options
@@ -131,22 +131,25 @@ class Libero100TableRegionSampler(MultiRegionRandomSampler):
         Raises:
             ValueError: [Invalid rotation axis]
         """
-        if self.rotation is None:
+        rotation = self.rotation if rotation is None else rotation
+        rotation_axis = self.rotation_axis if rotation_axis is None else rotation_axis
+        
+        if rotation is None:
             rot_angle = np.random.uniform(high=2 * np.pi, low=0)
-        elif isinstance(self.rotation, tuple) or isinstance(self.rotation, list):
+        elif isinstance(rotation, tuple) or isinstance(rotation, list):
             rot_angle = np.random.uniform(
-                high=max(self.rotation), low=min(self.rotation)
+                high=max(rotation), low=min(rotation)
             )
         # multiple rotations
-        elif isinstance(self.rotation, dict):
+        elif isinstance(rotation, dict):
             quat = np.array(
                 [0.0, 0.0, 0.0, 1.0]
             )  # \theta=0, in robosuite, quat = (x, y, z), w
-            for i in range(len(self.rotation.keys())):
-                rotation_axis = list(self.rotation.keys())[i]
+            for i in range(len(rotation.keys())):
+                rotation_axis = list(rotation.keys())[i]
                 rot_angle = np.random.uniform(
-                    high=max(self.rotation[rotation_axis]),
-                    low=min(self.rotation[rotation_axis]),
+                    high=max(rotation[rotation_axis]),
+                    low=min(rotation[rotation_axis]),
                 )
 
                 if rotation_axis == "x":
@@ -166,20 +169,20 @@ class Libero100TableRegionSampler(MultiRegionRandomSampler):
 
             return quat
         else:
-            rot_angle = self.rotation
+            rot_angle = rotation
 
         # Return angle based on axis requested
-        if self.rotation_axis == "x":
+        if rotation_axis == "x":
             return np.array([np.sin(rot_angle / 2), 0, 0, np.cos(rot_angle / 2)])
-        elif self.rotation_axis == "y":
+        elif rotation_axis == "y":
             return np.array([0, np.sin(rot_angle / 2), 0, np.cos(rot_angle / 2)])
-        elif self.rotation_axis == "z":
+        elif rotation_axis == "z":
             return np.array([0, 0, np.sin(rot_angle / 2), np.cos(rot_angle / 2)])
         else:
             # Invalid axis specified, raise error
             raise ValueError(
                 "Invalid rotation axis specified. Must be 'x', 'y', or 'z'. Got: {}".format(
-                    self.rotation_axis
+                    rotation_axis
                 )
             )
 
