@@ -25,6 +25,39 @@ class CannotFindValidLocationError(Exception):
     pass
 
 
+from robosuite.devices import Keyboard
+from pynput.keyboard import KeyCode, Key
+
+
+class ArrowKeyboard(Keyboard):
+    def _translate(self, key):
+        if hasattr(key, 'char'):
+            if key.char == '4':
+                key = KeyCode.from_char('a')
+            elif key.char == '6':
+                key = KeyCode.from_char('d')
+            elif key.char == '8':
+                key = KeyCode.from_char('w')
+            elif key.char == '2':
+                key = KeyCode.from_char('s')
+        else:
+            if key == Key.up:  # Up arrow
+                key = KeyCode.from_char('r')
+            elif key == Key.down:  # Down arrow
+                key = KeyCode.from_char('f')
+        return key
+    
+    def on_press(self, key):
+        key = self._translate(key)
+        return super().on_press(key)
+
+    def on_release(self, key):
+        key = self._translate(key)
+        return super().on_release(key)
+
+HALF_X_RANGE = 0.25
+HALF_Y_RANGE = 0.25
+
 def collect_human_trajectory(
     env, device, arm, env_configuration, problem_info, remove_directory=[]
 ):
@@ -48,8 +81,8 @@ def collect_human_trajectory(
         except:
             continue
         
-    sim = env.env.env.sim
     real_env = env.env.env
+    sim = real_env.sim
     
     def get_qpos(joint_name):
         qpos_addr = sim.model.get_joint_qpos_addr(joint_name)
@@ -57,10 +90,10 @@ def collect_human_trajectory(
     
     def find_new_place(obj):
         other_objects = [o for o in real_env.objects_dict.values() if o.name != obj.name]
-        x_min = -0.2 - 0.3 + obj.horizontal_radius
-        x_max = -0.2 + 0.3 - obj.horizontal_radius
-        y_min = 0.0 - 0.6 + obj.horizontal_radius
-        y_max = 0.0 + 0.6 - obj.horizontal_radius
+        x_min = -0.1 - HALF_X_RANGE + obj.horizontal_radius
+        x_max = -0.1 + HALF_X_RANGE - obj.horizontal_radius
+        y_min = 0.0 - HALF_Y_RANGE + obj.horizontal_radius
+        y_max = 0.0 + HALF_Y_RANGE - obj.horizontal_radius
 
         obj_x, obj_y, _ = get_qpos(obj.joints[0])[:3]
         
@@ -112,7 +145,7 @@ def collect_human_trajectory(
         rrt_star = RRTStar(
             start=get_qpos(interest_obj.joints[0])[:2] * scale,
             goal=np.array([new_x, new_y]) * scale,
-            rand_area=np.array([-0.2 - 0.3, -0.2 + 0.3, 0.0 - 0.6, 0.0 + 0.6]) * scale,
+            rand_area=np.array([-0.1 - HALF_X_RANGE, -0.1 + HALF_X_RANGE, 0.0 - HALF_Y_RANGE, 0.0 + HALF_Y_RANGE]) * scale,
             obstacle_list=obstacle_list,
             expand_dis=30,
             robot_radius=(interest_obj.horizontal_radius + 0.02) * scale,
@@ -134,14 +167,20 @@ def collect_human_trajectory(
             plt.grid(True)
             plt.show()
         
-        return np.array(path) / scale
+        return np.array(path)[::-1] / scale
     
     sim = env.env.env.sim
-    interest_obj_name = 'akita_black_bowl_1'
-    interest_obj = env.env.env.objects_dict[interest_obj_name]
+    interest_obj_name = 'tomato_sauce_1'
+    moving_obj_name = 'milk_1'
+    interest_obj = real_env.objects_dict[interest_obj_name]
+    moving_obj = real_env.objects_dict[moving_obj_name]
     
-    new_x, new_y, _ = find_new_place(interest_obj)
-    path = find_path(interest_obj, new_x, new_y)
+    orig_pos =  get_qpos(moving_obj.joints[0])[:3]
+    orig_x, orig_y, _ = orig_pos
+    real_env.object_states_dict[interest_obj_name].set_goal_state(orig_pos, None)
+    
+    new_x, new_y, _ = find_new_place(moving_obj)
+    path = find_path(moving_obj, new_x, new_y)
     
     distance = np.linalg.norm(path[1:] - path[:-1], axis=1).sum()
     steps = 60
@@ -169,23 +208,101 @@ def collect_human_trajectory(
     # Loop until we get a reset from the input or the task completes
     saving = True
     count = 0
+
+    robot_stage = "move_to_obj" # "move_to_obj", "move_down1", "grasp", "move_up", "move_to_target", "move_down2", "release"
+
+    active_robot = (
+        env.robots[0]
+        if env_configuration == "bimanual"
+        else env.robots[arm == "left"]
+    )
+    robot_init_pos = active_robot.controller.ee_pos.copy()
     
     while True:
+        next_key = None
         if 5 <= count < len(frame_path) + 5:
-            for joint in interest_obj.joints:
+            for joint in moving_obj.joints:
                 qpos_addr = sim.model.get_joint_qpos_addr(joint)
                 qpos = sim.data.qpos[qpos_addr[0] : qpos_addr[1]].copy()
                 qpos[:2] = frame_path[count - 5]
                 sim.data.qpos[qpos_addr[0] : qpos_addr[1]] = qpos
+        elif count > len(frame_path) + 5:
+            step_size = 0.01 #device._pos_step * device.pos_sensitivity
+            eef_pos = active_robot.controller.ee_pos
+            interest_pos = get_qpos(interest_obj.joints[0])[:3]
+            if robot_stage == "move_to_obj" or robot_stage == "move_down1":
+                if eef_pos[0] < interest_pos[0]:
+                    if eef_pos[0] + step_size < interest_pos[0] - step_size / 2:
+                        next_key = 's'
+                if eef_pos[0] > interest_pos[0]:
+                    if eef_pos[0] - step_size > interest_pos[0] + step_size / 2:
+                        next_key = 'w'
+                if eef_pos[1] < interest_pos[1]:
+                    if eef_pos[1] + step_size < interest_pos[1] - step_size / 2:
+                        next_key = 'd'
+                if eef_pos[1] > interest_pos[1]:
+                    if eef_pos[1] - step_size > interest_pos[1] + step_size / 2:
+                        next_key = 'a'
+                if next_key is None and robot_stage != "move_down1":
+                    robot_stage = "move_down1"
+                    
+            if robot_stage == "move_down1":
+                if next_key is None:
+                    top_z = get_qpos(interest_obj.joints[0])[2] + interest_obj.top_offset[-1]
+                    if eef_pos[2] > top_z + 0.002:
+                        next_key = 'f'
+                    
+                if next_key is None:
+                    robot_stage = "grasp"
+                    next_key = Key.space
+                    
+            if robot_stage == "grasp":
+                if np.isclose(active_robot.gripper.current_action, [-1, 1]).all():
+                    robot_stage = "move_up"
+                    
+            if robot_stage == "move_up":
+                if eef_pos[2] < robot_init_pos[2]:
+                    next_key = 'r'
+                if next_key is None:
+                    robot_stage = "move_to_target"
+            
+            if robot_stage == "move_to_target" or robot_stage == "move_down2":
+                if eef_pos[0] < orig_x:
+                    if eef_pos[0] + step_size < orig_x - step_size / 2:
+                        next_key = 's'
+                if eef_pos[0] > orig_x:
+                    if eef_pos[0] - step_size > orig_x + step_size / 2:
+                        next_key = 'w'
+                if eef_pos[1] < orig_y:
+                    if eef_pos[1] + step_size < orig_y - step_size / 2:
+                        next_key = 'd'
+                if eef_pos[1] > orig_y:
+                    if eef_pos[1] - step_size > orig_y + step_size / 2:
+                        next_key = 'a'
+                        
+                if next_key is None and robot_stage != "move_down2":
+                    robot_stage = "move_down2"
+                    
+            if robot_stage == "move_down2":
+                if eef_pos[2] > top_z + 0.05:
+                    next_key = 'f'
+                if next_key is None:
+                    robot_stage = "release"
+                    next_key = Key.space
+            
+
+            if next_key is not None:
+                if isinstance(next_key, str):
+                    next_key = KeyCode.from_char(next_key)
+                else:
+                    assert isinstance(next_key, Key)
+                device.on_press(next_key)
+                device.on_release(next_key)
+            # else:
+            #     import ipdb; ipdb.set_trace()
 
         count += 1
-        # Set active robot
-        active_robot = (
-            env.robots[0]
-            if env_configuration == "bimanual"
-            else env.robots[arm == "left"]
-        )
-
+        
         # Get the newest action
         action, grasp = input2action(
             device=device,
@@ -431,9 +548,7 @@ if __name__ == "__main__":
 
     # initialize device
     if args.device == "keyboard":
-        from robosuite.devices import Keyboard
-
-        device = Keyboard(
+        device = ArrowKeyboard(
             pos_sensitivity=args.pos_sensitivity, rot_sensitivity=args.rot_sensitivity
         )
     elif args.device == "spacemouse":
@@ -472,6 +587,7 @@ if __name__ == "__main__":
             )
         except (CannotFindPathError, CannotFindValidLocationError) as e:
             print(e)
+            env.close()
             continue
 
         if saving:

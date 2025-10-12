@@ -1,5 +1,5 @@
 from typing import List
-
+import numpy as np
 
 class Expression:
     def __init__(self):
@@ -116,3 +116,15 @@ class TurnOn(UnaryAtomic):
 class TurnOff(UnaryAtomic):
     def __call__(self, arg):
         return arg.turn_off()
+
+
+class CloseXY(BinaryAtomic):
+    def __init__(self, threshold=0.02):
+        super().__init__()
+        self.threshold = threshold
+
+    def __call__(self, arg):
+        pos = arg.get_geom_state()["pos"]
+        dist = np.linalg.norm(pos[:2] - arg.goal_pos[:2])
+        print(dist)
+        return dist <= self.threshold

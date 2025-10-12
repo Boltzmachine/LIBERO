@@ -43,6 +43,10 @@ class ObjectState(BaseObjectState):
         self.has_turnon_affordance = hasattr(
             self.env.get_object(self.object_name), "turn_on"
         )
+        
+    def set_goal_state(self, pos, quat):
+        self.goal_pos = pos
+        self.goal_quat = quat
 
     def get_geom_state(self):
         object_pos = self.env.sim.data.body_xpos[self.env.obj_body_id[self.object_name]]

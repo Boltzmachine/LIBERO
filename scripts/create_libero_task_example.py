@@ -56,10 +56,10 @@ class KitchenScene1(InitialSceneTemplates):
         # table size (1.0, 1.2, 0.05)
         self.regions.update(
             self.get_region_dict(
-                region_centroid_xy=[-0.2, 0.0],
+                region_centroid_xy=[-0.1, 0.0],
                 region_name="table_region",
                 target_name=self.workspace_name,
-                region_half_len=[0.3, 0.6],
+                region_half_len=[0.25, 0.25],
             )
         )
         
@@ -97,7 +97,8 @@ def main():
         scene_name=scene_name,
         objects_of_interest=objects_of_interest,
         goal_states=[
-            ("False")
+            ("CloseXY", "tomato_sauce_1"),
+            ("On", "tomato_sauce_1", "kitchen_table_table_region"),
         ],
     )
 
