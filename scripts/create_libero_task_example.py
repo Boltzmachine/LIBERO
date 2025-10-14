@@ -83,19 +83,23 @@ class KitchenScene1(InitialSceneTemplates):
 def main():
     # kitchen_scene_1
     scene_name = "kitchen_scene1"
-    language = "Move the bowl to its initial position."
+    language = "Move the moved object to its initial position"
     objects_of_interest = [
-        "akita_black_bowl_1",
+        # "akita_black_bowl_1",
         # "plate_1",
-        "orange_juice_1",
-        "milk_1",
         "tomato_sauce_1",
-        "butter_1",
+        # "orange_juice_1",
+        # "milk_1",
+        # "butter_1",
+    ]
+    moving_objects = [
+        "milk_1",
     ]
     register_task_info(
         language,
         scene_name=scene_name,
         objects_of_interest=objects_of_interest,
+        moving_objects=moving_objects,
         goal_states=[
             ("CloseXY", "tomato_sauce_1"),
             ("On", "tomato_sauce_1", "kitchen_table_table_region"),
@@ -114,7 +118,7 @@ def main():
     #     ],
     # )
     
-    bddl_file_names, failures = generate_bddl_from_task_info("./")
+    bddl_file_names, failures = generate_bddl_from_task_info("./libero/libero/bddl_files/libero_memory")
     print(bddl_file_names)
 
 

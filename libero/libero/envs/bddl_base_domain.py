@@ -1,3 +1,4 @@
+import pdb
 import numpy as np
 import os
 import robosuite.utils.transform_utils as T
@@ -19,6 +20,7 @@ from libero.libero.envs.object_states import *
 from libero.libero.envs.objects import *
 from libero.libero.envs.regions import *
 from libero.libero.envs.arenas import *
+from libero.libero.utils.errors import CannotFindPathError, CannotFindValidLocationError
 
 
 DIR_PATH = os.path.dirname(os.path.realpath(__file__))
@@ -158,6 +160,28 @@ class BDDLBaseDomain(SingleArmEnv):
             renderer=renderer,
             **kwargs,
         )
+        
+        self.moving_objects = self.parsed_problem.get("moving_objects", None)
+        if self.moving_objects is not None:
+            self.moving_counter = 0
+            
+    def reset(self, *args, **kwargs):
+        super().reset(*args, **kwargs)
+        if self.moving_objects is not None:
+            self.moving_counter = 0
+            self.set_goal_state(None, None)
+
+    #     if self.moving_objects is not None:
+    #         init_success = False
+    #         while not init_success:
+    #             try:
+    #                 res = super().reset(*args, **kwargs)
+    #                 self.init_moving_params()
+    #                 init_success = True
+    #             except (CannotFindPathError, CannotFindValidLocationError) as e:
+    #                 print(e)
+    #                 continue
+    #     return res
 
     def seed(self, seed):
         np.random.seed(seed)
@@ -820,8 +844,23 @@ class BDDLBaseDomain(SingleArmEnv):
         """
         # Run superclass method first
         super().visualize(vis_settings=vis_settings)
+        
+    def prepare_replay(self, frame_path):
+        if self.moving_objects is not None:
+            self.moving_counter = 0
+            self.moving_obj = self.objects_dict[self.moving_objects[0]]
+            self.frame_path = frame_path
 
     def step(self, action):
+        if self.moving_objects is not None:
+            self.moving_counter += 1
+            if 5 <= self.moving_counter < len(self.frame_path) + 5:
+                for joint in self.moving_obj.joints:
+                    qpos_addr = self.sim.model.get_joint_qpos_addr(joint)
+                    qpos = self.sim.data.qpos[qpos_addr[0] : qpos_addr[1]].copy()
+                    qpos[:2] = self.frame_path[self.moving_counter - 5]
+                    self.sim.data.qpos[qpos_addr[0] : qpos_addr[1]] = qpos
+            
         if self.action_dim == 4 and len(action) > 4:
             # Convert OSC_POSITION action
             action = np.array(action)
@@ -873,3 +912,141 @@ class BDDLBaseDomain(SingleArmEnv):
         ]:
             if object_name in query_dict:
                 return query_dict[object_name]
+
+    @property
+    def table_range(self):
+        ranges = self.parsed_problem['regions']['kitchen_table_table_region']['ranges'][0]
+        return ranges
+    
+    @property
+    def table_full_size(self):
+        if self._arena_type == "kitchen":
+            return self.kitchen_table_full_size
+        else:
+            raise NotImplementedError
+    
+    def get_qpos(self, obj):
+        joints = obj.joints
+        assert len(joints) == 1
+        qpos_addr = self.sim.model.get_joint_qpos_addr(joints[0])
+        return self.sim.data.qpos[qpos_addr[0] : qpos_addr[1]].copy()
+    
+    def find_new_place(self, obj):
+        other_objects = [o for o in self.objects_dict.values() if o.name != obj.name]
+        x_min = self.table_range[0] + obj.horizontal_radius
+        x_max = self.table_range[2] - obj.horizontal_radius
+        y_min = self.table_range[1] + obj.horizontal_radius
+        y_max = self.table_range[3] - obj.horizontal_radius
+
+        obj_x, obj_y, _ = self.get_qpos(obj)[:3]
+        
+        for _ in range(500):
+            x = np.random.uniform(x_min, x_max)
+            y = np.random.uniform(y_min, y_max)
+            assert len(obj.joints) == 1
+            z = self.get_qpos(obj)[2]
+            
+            location_valid = True
+            for other_obj in other_objects:
+                assert other_obj.name != obj.name
+                assert len(other_obj.joints) == 1
+                ox, oy, oz = self.get_qpos(other_obj)[:3]
+                if (
+                    np.linalg.norm((x - ox, y - oy))
+                    <= other_obj.horizontal_radius + obj.horizontal_radius + 0.02
+                ) and (
+                    z - z <= other_obj.top_offset[-1] - obj.bottom_offset[-1]
+                ):
+                    location_valid = False
+                    break
+                
+            if np.linalg.norm((x - obj_x, y - obj_y)) <= 0.3:
+                location_valid = False
+                break
+
+            if location_valid:
+                break
+                
+        if not location_valid:
+            raise CannotFindValidLocationError("Cannot find a valid location to place the object")
+            
+        return (x, y, z)
+
+    def find_path(self, interest_obj, new_x, new_y, show_animation=False):
+        scale = 100.0
+        import sys
+        sys.path.append("./PythonRobotics/PathPlanning/RRTStar/")
+        from rrt_star import RRTStar
+        other_objects = [o for o in self.objects_dict.values() if o.name != interest_obj.name]
+        assert len(other_objects) == len(self.objects_dict) - 1
+        obstacle_list = []
+        for other_obj in other_objects:
+            assert len(other_obj.joints) == 1
+            ox, oy, oz = self.get_qpos(other_obj)[:3]
+            obstacle_list.append((ox * scale, oy * scale, scale * (other_obj.horizontal_radius + 0.02)))
+        rrt_star = RRTStar(
+            start=self.get_qpos(interest_obj)[:2] * scale,
+            goal=np.array([new_x, new_y]) * scale,
+            rand_area=np.array([-self.table_full_size[0] / 2., self.table_full_size[0] / 2., self.table_full_size[1] / 2., self.table_full_size[1] / 2.]) * scale,
+            obstacle_list=obstacle_list,
+            expand_dis=30,
+            robot_radius=(interest_obj.horizontal_radius + 0.02) * scale,
+            # path_resolution=0.05,
+            max_iter=600,
+        )
+
+        path = rrt_star.planning(animation=show_animation)
+        
+        if path is None:
+            raise CannotFindPathError("Cannot find a path for the object to move")
+        else:
+            print("found path with length", len(path))
+        
+        if show_animation:
+            import matplotlib.pyplot as plt
+            rrt_star.draw_graph()
+            plt.plot([x for (x, y) in path], [y for (x, y) in path], '-r')
+            plt.grid(True)
+            plt.show()
+        
+        return np.array(path)[::-1] / scale
+    
+    def set_goal_state(self, goal_pos, goal_quat=None):
+        obj_state = self.object_states_dict[self.obj_of_interest[0]]
+        if goal_pos is None:
+            if hasattr(obj_state, 'goal_pos'):
+                delattr(obj_state, 'goal_pos')
+        else:
+            obj_state.goal_pos = goal_pos
+        
+    def init_moving_params(self):
+        self.moving_counter = 0
+        interest_obj_name = self.obj_of_interest[0]
+        moving_obj_name = self.moving_objects[0]
+        interest_obj = self.objects_dict[interest_obj_name]
+        moving_obj = self.objects_dict[moving_obj_name]
+        
+        self.moving_obj = moving_obj
+        self.interest_obj = interest_obj
+        
+        orig_pos =  self.get_qpos(moving_obj)[:3]
+        self.set_goal_state(orig_pos, None)
+        
+        new_x, new_y, _ = self.find_new_place(moving_obj)
+        path = self.find_path(moving_obj, new_x, new_y)
+        
+        distance = np.linalg.norm(path[1:] - path[:-1], axis=1).sum()
+        steps = 60
+        velocity = distance / steps
+
+        frame_path = []
+        for i in range(len(path)-1):
+            n_points = int(np.linalg.norm(path[i+1] - path[i]) / velocity)
+            xs = np.linspace(path[i][0], path[i+1][0], n_points)
+            ys = np.linspace(path[i][1], path[i+1][1], n_points)
+            if i > 0:
+                xs = xs[1:]
+                ys = ys[1:]
+            frame_path.append(np.stack([xs, ys], axis=1))
+        frame_path = np.concatenate(frame_path, axis=0)
+        self.frame_path = frame_path

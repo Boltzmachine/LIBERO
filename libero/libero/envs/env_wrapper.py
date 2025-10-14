@@ -95,6 +95,8 @@ class ControlEnv:
                 success = True
             except RandomizationError:
                 pass
+            except Exception as e:
+                print(e)
             finally:
                 continue
 

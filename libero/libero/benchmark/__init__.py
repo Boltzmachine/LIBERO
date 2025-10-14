@@ -54,6 +54,7 @@ def grab_language_from_filename(x):
 
 
 libero_suites = [
+    "libero_memory",
     "libero_spatial",
     "libero_object",
     "libero_goal",
@@ -116,6 +117,8 @@ class Benchmark(abc.ABC):
         tasks = list(task_maps[self.name].values())
         if self.name == "libero_90":
             self.tasks = tasks
+        elif self.name == "libero_memory":
+            self.tasks = tasks
         else:
             print(f"[info] using task orders {task_orders[self.task_order_index]}")
             self.tasks = [tasks[i] for i in task_orders[self.task_order_index]]
@@ -167,6 +170,13 @@ class Benchmark(abc.ABC):
     def set_task_embs(self, task_embs):
         self.task_embs = task_embs
 
+
+@register_benchmark
+class LIBERO_MEMORY(Benchmark):
+    def __init__(self, task_order_index=0):
+        super().__init__(task_order_index=task_order_index)
+        self.name = "libero_memory"
+        self._make_benchmark()
 
 @register_benchmark
 class LIBERO_SPATIAL(Benchmark):

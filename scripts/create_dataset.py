@@ -65,9 +65,8 @@ def main():
     bddl_file_name = f["data"].attrs["bddl_file_name"]
 
     bddl_file_dir = os.path.dirname(bddl_file_name)
-    replace_bddl_prefix = "/".join(bddl_file_dir.split("bddl_files/")[:-1] + "bddl_files")
-
-    hdf5_path = os.path.join(get_libero_path("datasets"), bddl_file_dir.split("bddl_files/")[-1].replace(".bddl", "_demo.hdf5"))
+    # replace_bddl_prefix = "/".join(bddl_file_dir.split("bddl_files/")[:-1] + "bddl_files")
+    hdf5_path = os.path.join(get_libero_path("datasets"), os.path.basename(bddl_file_name).replace(".bddl", "_demo.hdf5"))
 
     output_parent_dir = Path(hdf5_path).parent
     output_parent_dir.mkdir(parents=True, exist_ok=True)
@@ -123,7 +122,7 @@ def main():
     cap_index = 5
 
     for (i, ep) in enumerate(demos):
-        print("Playing back random episode... (press ESC to quit)")
+        print(f"Playing back {i}/{len(demos)} episode... (press ESC to quit)")
 
         # # select an episode randomly
         # read the model xml, using the metadata stored in the attribute for this episode
@@ -171,29 +170,37 @@ def main():
         dones = []
 
         valid_index = []
+        assert len(states) == len(actions)
+        for j, (action, state) in enumerate(zip(actions, states)):
+            if args.use_actions:
+                raise
+                obs, reward, done, info = env.step(action)
 
-        for j, action in enumerate(actions):
+                if j < num_actions - 1:
+                    # ensure that the actions deterministically lead to the same recorded states
+                    state_playback = env.sim.get_state().flatten()
+                    # assert(np.all(np.equal(states[j + 1], state_playback)))
+                    err = np.linalg.norm(states[j + 1] - state_playback)
 
-            obs, reward, done, info = env.step(action)
-
-            if j < num_actions - 1:
-                # ensure that the actions deterministically lead to the same recorded states
-                state_playback = env.sim.get_state().flatten()
-                # assert(np.all(np.equal(states[j + 1], state_playback)))
-                err = np.linalg.norm(states[j + 1] - state_playback)
-
-                if err > 0.01:
-                    print(
-                        f"[warning] playback diverged by {err:.2f} for ep {ep} at step {j}"
-                    )
+                    if err > 0.01:
+                        print(
+                            f"[warning] playback diverged by {err:.2f} for ep {ep} at step {j}"
+                        )
+            else:
+                env.sim.set_state_from_flattened(state)
+                env.sim.forward()
+                if env.renderer == "mjviewer":
+                    env.viewer.update()
 
             # Skip recording because the force sensor is not stable in
             # the beginning
-            if j < cap_index:
-                continue
+            
+            # if j < cap_index:
+            #     continue
 
             valid_index.append(j)
 
+            obs = env.observation_spec()
             if not args.no_proprio:
                 if "robot0_gripper_qpos" in obs:
                     gripper_states.append(obs["robot0_gripper_qpos"])
@@ -229,9 +236,7 @@ def main():
         dones[-1] = 1
         rewards = np.zeros(len(actions)).astype(np.uint8)
         rewards[-1] = 1
-        print(len(actions), len(agentview_images))
         assert len(actions) == len(agentview_images)
-        print(len(actions))
 
         ep_data_grp = grp.create_group(f"demo_{i}")
 
@@ -265,6 +270,8 @@ def main():
         ep_data_grp.attrs["num_samples"] = len(agentview_images)
         ep_data_grp.attrs["model_file"] = model_xml
         ep_data_grp.attrs["init_state"] = states[init_idx]
+        ep_data_grp.create_dataset("goal_pos", data=f['data'][ep]['goal_pos'][()])
+        ep_data_grp.create_dataset("success", data=f['data'][ep]['success'][()])
         total_len += len(agentview_images)
 
     grp.attrs["num_demos"] = len(demos)

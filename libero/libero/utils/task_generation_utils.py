@@ -7,11 +7,11 @@ from libero.libero.utils.bddl_generation_utils import *
 TASK_INFO = {}
 
 TaskInfoTuple = namedtuple(
-    "TaskInfoTuple", "scene_name language objects_of_interest goal_states"
+    "TaskInfoTuple", "scene_name language objects_of_interest moving_objects goal_states"
 )
 
 
-def register_task_info(language, scene_name, objects_of_interest=[], goal_states=[]):
+def register_task_info(language, scene_name, objects_of_interest=[], moving_objects=[], goal_states=[]):
 
     if scene_name not in TASK_INFO:
         TASK_INFO[scene_name] = []
@@ -25,7 +25,7 @@ def register_task_info(language, scene_name, objects_of_interest=[], goal_states
             raise ValueError
     task_goal = [("And", *goal_states)]
     TASK_INFO[scene_name].append(
-        TaskInfoTuple(scene_name, language, objects_of_interest, task_goal)
+        TaskInfoTuple(scene_name, language, objects_of_interest, moving_objects, task_goal)
     )
 
 
@@ -63,6 +63,7 @@ def generate_bddl_from_task_info(folder="/tmp/pddl"):
             scene_name = task_info_tuple.scene_name
             language = task_info_tuple.language
             objects_of_interest = task_info_tuple.objects_of_interest
+            moving_objects = task_info_tuple.moving_objects
             goal_states = task_info_tuple.goal_states
             scene = get_scene_class(scene_name)()
 
@@ -74,6 +75,7 @@ def generate_bddl_from_task_info(folder="/tmp/pddl"):
                     fixture_object_dict=scene.fixture_object_dict,
                     movable_object_dict=scene.movable_object_dict,
                     objects_of_interest=objects_of_interest,
+                    moving_objects=moving_objects,
                     init_states=scene.init_states,
                     goal_states=goal_states,
                 )

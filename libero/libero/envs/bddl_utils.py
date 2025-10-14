@@ -92,6 +92,7 @@ def robosuite_parse_problem(problem_filename):
         problem_name = "unknown"
         objects = {}
         obj_of_interest = []
+        moving_objects = []
         initial_state = []
         goal_state = []
         fixtures = {}
@@ -126,6 +127,10 @@ def robosuite_parse_problem(problem_filename):
                 group.pop(0)
                 while group:
                     obj_of_interest.append(group.pop(0))
+            elif t == ":moving_objects":
+                group.pop(0)
+                while group:
+                    moving_objects.append(group.pop(0))
             elif t == ":fixtures":
                 group.pop(0)
                 fixture_list = []
@@ -165,6 +170,7 @@ def robosuite_parse_problem(problem_filename):
             "goal_state": goal_state,
             "language_instruction": language_instruction,
             "obj_of_interest": obj_of_interest,
+            "moving_objects": moving_objects,
         }
     else:
         raise Exception(

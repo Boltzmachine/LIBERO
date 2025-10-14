@@ -16,14 +16,7 @@ from robosuite.utils.input_utils import input2action
 
 import libero.libero.envs.bddl_utils as BDDLUtils
 from libero.libero.envs import *
-
-
-class CannotFindPathError(Exception):
-    pass
-
-class CannotFindValidLocationError(Exception):
-    pass
-
+from libero.libero.utils.errors import CannotFindPathError, CannotFindValidLocationError
 
 from robosuite.devices import Keyboard
 from pynput.keyboard import KeyCode, Key
@@ -55,11 +48,8 @@ class ArrowKeyboard(Keyboard):
         key = self._translate(key)
         return super().on_release(key)
 
-HALF_X_RANGE = 0.25
-HALF_Y_RANGE = 0.25
-
 def collect_human_trajectory(
-    env, device, arm, env_configuration, problem_info, remove_directory=[]
+    env, device, arm, env_configuration, problem_info, remove_directory=[], save_failed=False
 ):
     """
     Use the device (keyboard or SpaceNav 3D mouse) to collect a demonstration.
@@ -77,125 +67,13 @@ def collect_human_trajectory(
     while not reset_success:
         try:
             env.reset()
+            env.init_moving_params()
             reset_success = True
-        except:
+        except Exception as e:
+            print(e)
             continue
-        
+    
     real_env = env.env.env
-    sim = real_env.sim
-    
-    def get_qpos(joint_name):
-        qpos_addr = sim.model.get_joint_qpos_addr(joint_name)
-        return sim.data.qpos[qpos_addr[0] : qpos_addr[1]].copy()
-    
-    def find_new_place(obj):
-        other_objects = [o for o in real_env.objects_dict.values() if o.name != obj.name]
-        x_min = -0.1 - HALF_X_RANGE + obj.horizontal_radius
-        x_max = -0.1 + HALF_X_RANGE - obj.horizontal_radius
-        y_min = 0.0 - HALF_Y_RANGE + obj.horizontal_radius
-        y_max = 0.0 + HALF_Y_RANGE - obj.horizontal_radius
-
-        obj_x, obj_y, _ = get_qpos(obj.joints[0])[:3]
-        
-        for _ in range(500):
-            x = np.random.uniform(x_min, x_max)
-            y = np.random.uniform(y_min, y_max)
-            assert len(obj.joints) == 1
-            z = get_qpos(obj.joints[0])[2]
-            
-            location_valid = True
-            for other_obj in other_objects:
-                assert other_obj.name != obj.name
-                assert len(other_obj.joints) == 1
-                ox, oy, oz = get_qpos(other_obj.joints[0])[:3]
-                if (
-                    np.linalg.norm((x - ox, y - oy))
-                    <= other_obj.horizontal_radius + obj.horizontal_radius + 0.02
-                ) and (
-                    z - z <= other_obj.top_offset[-1] - obj.bottom_offset[-1]
-                ):
-                    location_valid = False
-                    break
-                
-            if np.linalg.norm((x - obj_x, y - obj_y)) <= 0.3:
-                location_valid = False
-                break
-
-            if location_valid:
-                break
-                
-        if not location_valid:
-            raise CannotFindValidLocationError("Cannot find a valid location to place the object")
-            
-        return (x, y, z)
-
-    def find_path(interest_obj, new_x, new_y, show_animation=False):
-        scale = 100.0
-        import sys
-        sys.path.append("./PythonRobotics/PathPlanning/RRTStar/")
-        from rrt_star import RRTStar
-        other_objects = [o for o in real_env.objects_dict.values() if o.name != interest_obj.name]
-        assert len(other_objects) == len(real_env.objects_dict) - 1
-        obstacle_list = []
-        for other_obj in other_objects:
-            assert len(other_obj.joints) == 1
-            ox, oy, oz = get_qpos(other_obj.joints[0])[:3]
-            obstacle_list.append((ox * scale, oy * scale, scale * (other_obj.horizontal_radius + 0.02)))
-        
-        rrt_star = RRTStar(
-            start=get_qpos(interest_obj.joints[0])[:2] * scale,
-            goal=np.array([new_x, new_y]) * scale,
-            rand_area=np.array([-0.1 - HALF_X_RANGE, -0.1 + HALF_X_RANGE, 0.0 - HALF_Y_RANGE, 0.0 + HALF_Y_RANGE]) * scale,
-            obstacle_list=obstacle_list,
-            expand_dis=30,
-            robot_radius=(interest_obj.horizontal_radius + 0.02) * scale,
-            # path_resolution=0.05,
-            max_iter=1000,
-        )
-
-        path = rrt_star.planning(animation=show_animation)
-        
-        if path is None:
-            raise CannotFindPathError("Cannot find a path for the object to move")
-        else:
-            print("found path with length", len(path))
-        
-        if show_animation:
-            import matplotlib.pyplot as plt
-            rrt_star.draw_graph()
-            plt.plot([x for (x, y) in path], [y for (x, y) in path], '-r')
-            plt.grid(True)
-            plt.show()
-        
-        return np.array(path)[::-1] / scale
-    
-    sim = env.env.env.sim
-    interest_obj_name = 'tomato_sauce_1'
-    moving_obj_name = 'milk_1'
-    interest_obj = real_env.objects_dict[interest_obj_name]
-    moving_obj = real_env.objects_dict[moving_obj_name]
-    
-    orig_pos =  get_qpos(moving_obj.joints[0])[:3]
-    orig_x, orig_y, _ = orig_pos
-    real_env.object_states_dict[interest_obj_name].set_goal_state(orig_pos, None)
-    
-    new_x, new_y, _ = find_new_place(moving_obj)
-    path = find_path(moving_obj, new_x, new_y)
-    
-    distance = np.linalg.norm(path[1:] - path[:-1], axis=1).sum()
-    steps = 60
-    velocity = distance / steps
-
-    frame_path = []
-    for i in range(len(path)-1):
-        n_points = int(np.linalg.norm(path[i+1] - path[i]) / velocity)
-        xs = np.linspace(path[i][0], path[i+1][0], n_points)
-        ys = np.linspace(path[i][1], path[i+1][1], n_points)
-        if i > 0:
-            xs = xs[1:]
-            ys = ys[1:]
-        frame_path.append(np.stack([xs, ys], axis=1))
-    frame_path = np.concatenate(frame_path, axis=0)
     
     # ID = 2 always corresponds to agentview
     env.render()
@@ -217,19 +95,16 @@ def collect_human_trajectory(
         else env.robots[arm == "left"]
     )
     robot_init_pos = active_robot.controller.ee_pos.copy()
+    goal_pos = real_env.object_states_dict[real_env.obj_of_interest[0]].goal_pos
     
+    success = False
     while True:
         next_key = None
-        if 5 <= count < len(frame_path) + 5:
-            for joint in moving_obj.joints:
-                qpos_addr = sim.model.get_joint_qpos_addr(joint)
-                qpos = sim.data.qpos[qpos_addr[0] : qpos_addr[1]].copy()
-                qpos[:2] = frame_path[count - 5]
-                sim.data.qpos[qpos_addr[0] : qpos_addr[1]] = qpos
-        elif count > len(frame_path) + 5:
+
+        if count > len(real_env.frame_path) + 5:
             step_size = 0.01 #device._pos_step * device.pos_sensitivity
             eef_pos = active_robot.controller.ee_pos
-            interest_pos = get_qpos(interest_obj.joints[0])[:3]
+            interest_pos = real_env.get_qpos(real_env.interest_obj)[:3]
             if robot_stage == "move_to_obj" or robot_stage == "move_down1":
                 if eef_pos[0] < interest_pos[0]:
                     if eef_pos[0] + step_size < interest_pos[0] - step_size / 2:
@@ -248,7 +123,7 @@ def collect_human_trajectory(
                     
             if robot_stage == "move_down1":
                 if next_key is None:
-                    top_z = get_qpos(interest_obj.joints[0])[2] + interest_obj.top_offset[-1]
+                    top_z = real_env.get_qpos(real_env.interest_obj)[2] + real_env.interest_obj.top_offset[-1]
                     if eef_pos[2] > top_z + 0.002:
                         next_key = 'f'
                     
@@ -267,17 +142,17 @@ def collect_human_trajectory(
                     robot_stage = "move_to_target"
             
             if robot_stage == "move_to_target" or robot_stage == "move_down2":
-                if eef_pos[0] < orig_x:
-                    if eef_pos[0] + step_size < orig_x - step_size / 2:
+                if eef_pos[0] < goal_pos[0]:
+                    if eef_pos[0] + step_size < goal_pos[0] - step_size / 2:
                         next_key = 's'
-                if eef_pos[0] > orig_x:
-                    if eef_pos[0] - step_size > orig_x + step_size / 2:
+                if eef_pos[0] > goal_pos[0]:
+                    if eef_pos[0] - step_size > goal_pos[0] + step_size / 2:
                         next_key = 'w'
-                if eef_pos[1] < orig_y:
-                    if eef_pos[1] + step_size < orig_y - step_size / 2:
+                if eef_pos[1] < goal_pos[1]:
+                    if eef_pos[1] + step_size < goal_pos[1] - step_size / 2:
                         next_key = 'd'
-                if eef_pos[1] > orig_y:
-                    if eef_pos[1] - step_size > orig_y + step_size / 2:
+                if eef_pos[1] > goal_pos[1]:
+                    if eef_pos[1] - step_size > goal_pos[1] + step_size / 2:
                         next_key = 'a'
                         
                 if next_key is None and robot_stage != "move_down2":
@@ -327,6 +202,7 @@ def collect_human_trajectory(
 
         # state machine to check for having a success for 10 consecutive timesteps
         if env._check_success():
+            success = True
             if task_completion_hold_count > 0:
                 task_completion_hold_count -= 1  # latched state, decrement count
             else:
@@ -334,12 +210,29 @@ def collect_human_trajectory(
         else:
             task_completion_hold_count = -1  # null the counter if there's no success
 
-    print(count)
+        if count == 380 and task_completion_hold_count < 0:
+            # timeout
+            saving = False
+            break
+        
+    info = {
+        "success": success,
+        "length": count,
+    }
     # cleanup for end of data collection episodes
-    if not saving:
+    if not saving and not save_failed:
         remove_directory.append(env.ep_directory.split("/")[-1])
+    else:
+        np.savez(
+            os.path.join(env.ep_directory, "extra_info.npz"),
+            goal_pos=goal_pos,
+            # goal_quat=None,
+            **info,
+        )
+        
     env.close()
-    return saving
+
+    return saving, info
 
 
 def gather_demonstrations_as_hdf5(
@@ -418,6 +311,11 @@ def gather_demonstrations_as_hdf5(
         # write datasets for states and actions
         ep_data_grp.create_dataset("states", data=np.array(states))
         ep_data_grp.create_dataset("actions", data=np.array(actions))
+        
+        extra_info = np.load(os.path.join(directory, ep_directory, "extra_info.npz"), allow_pickle=True)
+        for key in extra_info:
+            if extra_info[key] is not None:
+                ep_data_grp.create_dataset(key, data=extra_info[key])
 
     # write dataset attributes (metadata)
     now = datetime.datetime.now()
@@ -576,23 +474,36 @@ if __name__ == "__main__":
     os.makedirs(new_dir)
 
     # collect demonstrations
-
+    save_failed = True
     remove_directory = []
     i = 0
+    successes = []
+    lengths = []
     while i < args.num_demonstration:
-        print(i)
-        try:
-            saving = collect_human_trajectory(
-                env, device, args.arm, args.config, problem_info, remove_directory
-            )
-        except (CannotFindPathError, CannotFindValidLocationError) as e:
-            print(e)
-            env.close()
-            continue
+        print("Collecting demonstration {}/{}".format(i + 1, args.num_demonstration))
+        while True:    
+            try:
+                saving, info = collect_human_trajectory(
+                    env, device, args.arm, args.config, problem_info, remove_directory, save_failed=save_failed
+                )
+            except (CannotFindPathError, CannotFindValidLocationError) as e:
+                print(e)
+                env.close()
+                continue
+            break
+        successes.append(info["success"])
+        if info["success"]:
+            lengths.append(info["length"])
 
-        if saving:
-            print(remove_directory)
+        if saving or save_failed:
+            if save_failed:
+                save_dir = os.path.join(new_dir, "success" if info["success"] else "failed")
+                os.makedirs(save_dir, exist_ok=True)
+            else:
+                save_dir = new_dir
             gather_demonstrations_as_hdf5(
-                tmp_directory, new_dir, env_info, args, remove_directory
+                tmp_directory, save_dir, env_info, args, remove_directory
             )
             i += 1
+    print("Success rate: {}".format(np.mean(successes)))
+    print("Length: mean {}, max {}, len {}".format(np.mean(lengths), np.max(lengths), len(lengths)))

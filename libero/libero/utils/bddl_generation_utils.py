@@ -163,6 +163,10 @@ def get_objects(**kwargs):
 def get_objects_of_interest(l):
     return get_list_string(l)
 
+@ObjectDict(object_type="moving_objects")
+def get_moving_objects(l):
+    return get_list_string(l)
+
 
 def general_get_str_func(v):
     if type(v) is list:
@@ -368,6 +372,7 @@ def kitchen_table_task_suites_generator(
     fixture_object_dict,
     movable_object_dict,
     objects_of_interest,
+    moving_objects,
     init_states,
     goal_states,
 ):
@@ -379,6 +384,7 @@ def kitchen_table_task_suites_generator(
     result += get_fixtures(**fixture_object_dict)
     result += get_objects(**movable_object_dict)
     result += get_objects_of_interest(objects_of_interest)
+    result += get_moving_objects(moving_objects)
     result += get_init_state(init_states)
     result += get_goal_state(goal_states)
     return result

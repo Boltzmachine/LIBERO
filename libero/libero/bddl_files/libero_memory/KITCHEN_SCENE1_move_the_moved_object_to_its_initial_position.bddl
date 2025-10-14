@@ -1,0 +1,50 @@
+(define (problem LIBERO_Kitchen_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language Move the moved object to its initial position)
+    (:regions
+      (table_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.35 -0.25 0.15 0.25)
+            )
+          )
+          (:yaw_rotation (
+              (0.0 0.0)
+            )
+          )
+      )
+    )
+
+  (:fixtures
+    kitchen_table - kitchen_table
+  )
+
+  (:objects
+    akita_black_bowl_1 - akita_black_bowl
+    orange_juice_1 - orange_juice
+    milk_1 - milk
+    tomato_sauce_1 - tomato_sauce
+    butter_1 - butter
+  )
+
+  (:obj_of_interest
+    tomato_sauce_1
+  )
+
+  (:moving_objects
+    milk_1
+  )
+
+  (:init
+    (On akita_black_bowl_1 kitchen_table_table_region)
+    (On orange_juice_1 kitchen_table_table_region)
+    (On milk_1 kitchen_table_table_region)
+    (On tomato_sauce_1 kitchen_table_table_region)
+    (On butter_1 kitchen_table_table_region)
+  )
+
+  (:goal
+    (And (CloseXY tomato_sauce_1) (On tomato_sauce_1 kitchen_table_table_region))
+  )
+
+)
