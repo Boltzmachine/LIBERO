@@ -1039,6 +1039,10 @@ class BDDLBaseDomain(SingleArmEnv):
     def interest_obj(self):
         interest_obj_name = self.obj_of_interest[0]
         return self.objects_dict[interest_obj_name]
+    
+    @property
+    def moving_completed(self):
+        return self.moving_counter >= len(self.frame_path) + 5
         
     def init_moving_params(self):
         self.moving_counter = 0
