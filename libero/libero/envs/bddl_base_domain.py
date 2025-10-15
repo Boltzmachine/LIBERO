@@ -919,6 +919,11 @@ class BDDLBaseDomain(SingleArmEnv):
         return ranges
     
     @property
+    def operation_range(self):
+        ranges = self.parsed_problem['regions']['kitchen_table_operation_region']['ranges'][0]
+        return ranges
+    
+    @property
     def table_full_size(self):
         if self._arena_type == "kitchen":
             return self.kitchen_table_full_size
@@ -960,7 +965,7 @@ class BDDLBaseDomain(SingleArmEnv):
                     location_valid = False
                     break
                 
-            if np.linalg.norm((x - obj_x, y - obj_y)) <= 0.3:
+            if np.linalg.norm((x - obj_x, y - obj_y)) < 0.1:
                 location_valid = False
                 break
 
@@ -1011,13 +1016,29 @@ class BDDLBaseDomain(SingleArmEnv):
         
         return np.array(path)[::-1] / scale
     
-    def set_goal_state(self, goal_pos, goal_quat=None):
+    def set_goal_state(self, goal_pos, goal_quat=None, frame_path=None):
         obj_state = self.object_states_dict[self.obj_of_interest[0]]
         if goal_pos is None:
             if hasattr(obj_state, 'goal_pos'):
                 delattr(obj_state, 'goal_pos')
         else:
             obj_state.goal_pos = goal_pos
+            
+        if frame_path is None:
+            if hasattr(self, 'frame_path'):
+                delattr(self, 'frame_path')
+        else:
+            self.frame_path = frame_path
+            
+    @property
+    def moving_obj(self):
+        moving_obj_name = self.moving_objects[0]
+        return self.objects_dict[moving_obj_name]
+    
+    @property
+    def interest_obj(self):
+        interest_obj_name = self.obj_of_interest[0]
+        return self.objects_dict[interest_obj_name]
         
     def init_moving_params(self):
         self.moving_counter = 0
@@ -1025,9 +1046,6 @@ class BDDLBaseDomain(SingleArmEnv):
         moving_obj_name = self.moving_objects[0]
         interest_obj = self.objects_dict[interest_obj_name]
         moving_obj = self.objects_dict[moving_obj_name]
-        
-        self.moving_obj = moving_obj
-        self.interest_obj = interest_obj
         
         orig_pos =  self.get_qpos(moving_obj)[:3]
         self.set_goal_state(orig_pos, None)

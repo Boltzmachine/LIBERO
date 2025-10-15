@@ -57,9 +57,18 @@ class KitchenScene1(InitialSceneTemplates):
         self.regions.update(
             self.get_region_dict(
                 region_centroid_xy=[-0.1, 0.0],
+                region_name="operation_region",
+                target_name=self.workspace_name,
+                region_half_len=[0.15, 0.15],
+            )
+        )
+        
+        self.regions.update(
+            self.get_region_dict(
+                region_centroid_xy=[0.0, 0.0],
                 region_name="table_region",
                 target_name=self.workspace_name,
-                region_half_len=[0.25, 0.25],
+                region_half_len=[0.3, 0.3],
             )
         )
         
@@ -70,11 +79,11 @@ class KitchenScene1(InitialSceneTemplates):
     @property
     def init_states(self):
         states = [
-            ("On", "akita_black_bowl_1", "kitchen_table_table_region"),
             # ("On", "plate_1", "kitchen_table_table_region"),
+            ("On", "milk_1", "kitchen_table_operation_region"),
+            ("On", "tomato_sauce_1", "kitchen_table_operation_region"),
+            ("On", "akita_black_bowl_1", "kitchen_table_table_region"),
             ("On", "orange_juice_1", "kitchen_table_table_region"),
-            ("On", "milk_1", "kitchen_table_table_region"),
-            ("On", "tomato_sauce_1", "kitchen_table_table_region"),
             ("On", "butter_1", "kitchen_table_table_region"),
         ]
         return states
@@ -83,7 +92,7 @@ class KitchenScene1(InitialSceneTemplates):
 def main():
     # kitchen_scene_1
     scene_name = "kitchen_scene1"
-    language = "Move the moved object to its initial position"
+    language = "Move the tomato sauce to the milk's original position"
     objects_of_interest = [
         # "akita_black_bowl_1",
         # "plate_1",

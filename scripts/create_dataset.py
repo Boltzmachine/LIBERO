@@ -152,6 +152,7 @@ def main():
         env.sim.set_state_from_flattened(states[init_idx])
         env.sim.forward()
         model_xml = env.sim.model.get_xml()
+        env.set_goal_state(f['data'][ep]['goal_pos'][()], frame_path=f['data'][ep]['frame_path'][()])
 
         ee_states = []
         gripper_states = []
@@ -173,7 +174,6 @@ def main():
         assert len(states) == len(actions)
         for j, (action, state) in enumerate(zip(actions, states)):
             if args.use_actions:
-                raise
                 obs, reward, done, info = env.step(action)
 
                 if j < num_actions - 1:
@@ -271,6 +271,7 @@ def main():
         ep_data_grp.attrs["model_file"] = model_xml
         ep_data_grp.attrs["init_state"] = states[init_idx]
         ep_data_grp.create_dataset("goal_pos", data=f['data'][ep]['goal_pos'][()])
+        ep_data_grp.create_dataset("frame_path", data=f['data'][ep]['frame_path'][()])
         ep_data_grp.create_dataset("success", data=f['data'][ep]['success'][()])
         total_len += len(agentview_images)
 

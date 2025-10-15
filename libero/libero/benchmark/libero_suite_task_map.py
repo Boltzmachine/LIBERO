@@ -1,6 +1,6 @@
 libero_task_map = {
     "libero_memory": [
-        "KITCHEN_SCENE1_move_the_moved_object_to_its_initial_position"
+        "KITCHEN_SCENE1_move_the_tomato_sauce_to_the_milk's_original_position"
     ],
     "libero_spatial": [
         "pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate",

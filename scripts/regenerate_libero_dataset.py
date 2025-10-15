@@ -134,12 +134,13 @@ def main(args):
             
             # Reset environment, set initial state, and wait a few steps for environment to settle
             env.reset()
-            env.env.set_goal_state(demo_data['goal_pos'][()])
+            env.env.set_goal_state(demo_data['goal_pos'][()], frame_path=demo_data['frame_path'][()])
             env.set_init_state(orig_states[0])
             
             env.env.moving_counter = -10
             for _ in range(10):
                 obs, reward, done, info = env.step(get_libero_dummy_action("llava"))
+            assert env.env.moving_counter == 0, "Environment failed to settle after reset!"
 
             # Set up new data lists
             states = []
@@ -192,11 +193,16 @@ def main(args):
                 eye_in_hand_images.append(obs["robot0_eye_in_hand_image"])
 
                 # Execute demo action in environment
-                # obs, reward, done, info = env.step(action.tolist())
-                obs = env.regenerate_obs_from_state(state)
+                obs, reward, done, info = env.step(action.tolist())
+                # obs = env.regenerate_obs_from_state(state)
 
             # At end of episode, save replayed trajectories to new HDF5 files (only keep successes)
-            if True or done:
+            if done:
+                try:
+                    assert demo_data["success"][()], "Demo was successful but environment rollout failed!"
+                except AssertionError as e:
+                    import ipdb; ipdb.set_trace()
+
                 # dones = np.zeros(len(actions)).astype(np.uint8)
                 # dones[-1] = 1
                 # rewards = np.zeros(len(actions)).astype(np.uint8)

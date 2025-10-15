@@ -97,12 +97,15 @@ def collect_human_trajectory(
     robot_init_pos = active_robot.controller.ee_pos.copy()
     goal_pos = real_env.object_states_dict[real_env.obj_of_interest[0]].goal_pos
     
+    auto_control = True
+    max_count = 380 if auto_control else float("inf")
+    
     success = False
     while True:
         next_key = None
 
         if count > len(real_env.frame_path) + 5:
-            step_size = 0.01 #device._pos_step * device.pos_sensitivity
+            step_size = 0.012 #device._pos_step * device.pos_sensitivity
             eef_pos = active_robot.controller.ee_pos
             interest_pos = real_env.get_qpos(real_env.interest_obj)[:3]
             if robot_stage == "move_to_obj" or robot_stage == "move_down1":
@@ -124,7 +127,7 @@ def collect_human_trajectory(
             if robot_stage == "move_down1":
                 if next_key is None:
                     top_z = real_env.get_qpos(real_env.interest_obj)[2] + real_env.interest_obj.top_offset[-1]
-                    if eef_pos[2] > top_z + 0.002:
+                    if eef_pos[2] > top_z + 0.001:
                         next_key = 'f'
                     
                 if next_key is None:
@@ -165,16 +168,13 @@ def collect_human_trajectory(
                     robot_stage = "release"
                     next_key = Key.space
             
-
-            if next_key is not None:
+            if next_key is not None and auto_control:
                 if isinstance(next_key, str):
                     next_key = KeyCode.from_char(next_key)
                 else:
                     assert isinstance(next_key, Key)
                 device.on_press(next_key)
                 device.on_release(next_key)
-            # else:
-            #     import ipdb; ipdb.set_trace()
 
         count += 1
         
@@ -210,7 +210,7 @@ def collect_human_trajectory(
         else:
             task_completion_hold_count = -1  # null the counter if there's no success
 
-        if count == 380 and task_completion_hold_count < 0:
+        if count >= max_count and task_completion_hold_count < 0:
             # timeout
             saving = False
             break
@@ -225,6 +225,7 @@ def collect_human_trajectory(
     else:
         np.savez(
             os.path.join(env.ep_directory, "extra_info.npz"),
+            frame_path=np.array(real_env.frame_path),
             goal_pos=goal_pos,
             # goal_quat=None,
             **info,
@@ -496,13 +497,8 @@ if __name__ == "__main__":
             lengths.append(info["length"])
 
         if saving or save_failed:
-            if save_failed:
-                save_dir = os.path.join(new_dir, "success" if info["success"] else "failed")
-                os.makedirs(save_dir, exist_ok=True)
-            else:
-                save_dir = new_dir
             gather_demonstrations_as_hdf5(
-                tmp_directory, save_dir, env_info, args, remove_directory
+                tmp_directory, new_dir, env_info, args, remove_directory
             )
             i += 1
     print("Success rate: {}".format(np.mean(successes)))
