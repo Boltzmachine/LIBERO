@@ -134,6 +134,10 @@ class BDDLBaseDomain(SingleArmEnv):
         self._arena_xml = os.path.join(self.custom_asset_dir, scene_xml)
         self._arena_properties = scene_properties
 
+        self.moving_objects = self.parsed_problem.get("moving_objects", None)
+        if self.moving_obj is not None:
+            self.moving_counter = 0
+            
         super().__init__(
             robots=robots,
             env_configuration=env_configuration,
@@ -160,14 +164,10 @@ class BDDLBaseDomain(SingleArmEnv):
             renderer=renderer,
             **kwargs,
         )
-        
-        self.moving_objects = self.parsed_problem.get("moving_objects", None)
-        if self.moving_objects is not None:
-            self.moving_counter = 0
-            
+
     def reset(self, *args, **kwargs):
         super().reset(*args, **kwargs)
-        if self.moving_objects is not None:
+        if self.moving_obj is not None:
             self.moving_counter = 0
             self.set_goal_state(None, None)
 
@@ -584,10 +584,10 @@ class BDDLBaseDomain(SingleArmEnv):
         return sensors, names
 
     def _add_placement_initializer(self):
-        sample_objects_togther = True
-        if sample_objects_togther:
+        sample_together = self.moving_obj is not None
+        if sample_together:
             from collections import defaultdict
-            togther_object_names = defaultdict(list)
+            together_object_names = defaultdict(list)
 
         mapping_inv = {}
         for k, values in self.parsed_problem["fixtures"].items():
@@ -643,8 +643,8 @@ class BDDLBaseDomain(SingleArmEnv):
                     )
                     self.placement_initializer.append_sampler(fixture_sampler)
                 else:
-                    if sample_objects_togther:
-                        togther_object_names[region_name].append(object_name)
+                    if sample_together:
+                        together_object_names[region_name].append(object_name)
                     else:
                         # This is to place movable objects.
                         region_sampler = get_region_samplers(
@@ -702,8 +702,8 @@ class BDDLBaseDomain(SingleArmEnv):
                     )
                     self.object_property_initializers.append(property_initializer)
                     
-        if sample_objects_togther:
-            for region_name, object_names in togther_object_names.items():
+        if sample_together:
+            for region_name, object_names in together_object_names.items():
                 target_name = regions[region_name]["target"]
                 x_ranges, y_ranges = rectangle2xyrange(regions[region_name]["ranges"])
                 region_sampler = get_region_samplers(
@@ -844,15 +844,9 @@ class BDDLBaseDomain(SingleArmEnv):
         """
         # Run superclass method first
         super().visualize(vis_settings=vis_settings)
-        
-    def prepare_replay(self, frame_path):
-        if self.moving_objects is not None:
-            self.moving_counter = 0
-            self.moving_obj = self.objects_dict[self.moving_objects[0]]
-            self.frame_path = frame_path
 
     def step(self, action):
-        if self.moving_objects is not None:
+        if self.moving_obj is not None:
             self.moving_counter += 1
             if 5 <= self.moving_counter < len(self.frame_path) + 5:
                 for joint in self.moving_obj.joints:
@@ -980,7 +974,7 @@ class BDDLBaseDomain(SingleArmEnv):
     def find_path(self, interest_obj, new_x, new_y, show_animation=False):
         scale = 100.0
         import sys
-        sys.path.append("./PythonRobotics/PathPlanning/RRTStar/")
+        sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../../../PythonRobotics/PathPlanning/RRTStar/")
         from rrt_star import RRTStar
         other_objects = [o for o in self.objects_dict.values() if o.name != interest_obj.name]
         assert len(other_objects) == len(self.objects_dict) - 1
@@ -1032,6 +1026,10 @@ class BDDLBaseDomain(SingleArmEnv):
             
     @property
     def moving_obj(self):
+        if len(self.moving_objects) > 1:
+            raise NotImplementedError("Only support one moving object now")
+        if len(self.moving_objects) == 0:
+            return None
         moving_obj_name = self.moving_objects[0]
         return self.objects_dict[moving_obj_name]
     

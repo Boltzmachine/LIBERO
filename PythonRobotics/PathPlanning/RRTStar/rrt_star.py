@@ -14,7 +14,7 @@ sys.path.append(str(pathlib.Path(__file__).parent.parent))
 
 from RRT.rrt import RRT
 
-show_animation = True
+show_animation = False
 
 
 class RRTStar(RRT):
@@ -65,7 +65,7 @@ class RRTStar(RRT):
 
         self.node_list = [self.start]
         for i in range(self.max_iter):
-            print("Iter:", i, ", number of nodes:", len(self.node_list), end="\r")
+            #print("Iter:", i, ", number of nodes:", len(self.node_list), end="\r")
             rnd = self.get_random_node()
             nearest_ind = self.get_nearest_node_index(self.node_list, rnd)
             new_node = self.steer(self.node_list[nearest_ind], rnd,
@@ -95,7 +95,7 @@ class RRTStar(RRT):
                 if last_index is not None:
                     return self.generate_final_course(last_index)
 
-        print("reached max iteration")
+        #print("reached max iteration")
 
         last_index = self.search_best_goal_node()
         if last_index is not None:
@@ -135,7 +135,7 @@ class RRTStar(RRT):
         min_cost = min(costs)
 
         if min_cost == float("inf"):
-            print("There is no good path.(min_cost is inf)")
+            #print("There is no good path.(min_cost is inf)")
             return None
 
         min_ind = near_inds[costs.index(min_cost)]
