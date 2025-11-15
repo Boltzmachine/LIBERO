@@ -1049,7 +1049,7 @@ class BDDLBaseDomain(SingleArmEnv):
     def find_path(self, interest_obj, new_x, new_y, show_animation=False):
         scale = 100.0
         import sys
-        sys.path.append("./PythonRobotics/PathPlanning/RRTStar/")
+        sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../../../PythonRobotics/PathPlanning/RRTStar/")
         from rrt_star import RRTStar
         other_objects = [o for o in self.objects_dict.values() if o.name != interest_obj.name]
         assert len(other_objects) == len(self.objects_dict) - 1
@@ -1057,16 +1057,16 @@ class BDDLBaseDomain(SingleArmEnv):
         for other_obj in other_objects:
             assert len(other_obj.joints) == 1
             ox, oy, oz = self.get_qpos(other_obj)[:3]
-            obstacle_list.append((ox * scale, oy * scale, scale * (other_obj.horizontal_radius + 0.02)))
+            obstacle_list.append((ox * scale, oy * scale, scale * (other_obj.horizontal_radius + 0.01)))
         rrt_star = RRTStar(
             start=self.get_qpos(interest_obj)[:2] * scale,
             goal=np.array([new_x, new_y]) * scale,
             rand_area=np.array([-self.table_full_size[0] / 2., self.table_full_size[0] / 2., -self.table_full_size[1] / 2., self.table_full_size[1] / 2.]) * scale,
             obstacle_list=obstacle_list,
-            expand_dis=30,
-            robot_radius=(interest_obj.horizontal_radius + 0.02) * scale,
+            expand_dis=10,
+            robot_radius=(interest_obj.horizontal_radius + 0.01) * scale,
             # path_resolution=0.05,
-            max_iter=600,
+            max_iter=500,
         )
 
         path = rrt_star.planning(animation=show_animation)
@@ -1165,6 +1165,7 @@ class BDDLBaseDomain(SingleArmEnv):
                 goal_pos =  self.get_qpos(self.moving_obj)[:3]
                 obj_state = self.object_states_dict[self.obj_of_interest[0]]
                 obj_state.goal_pos = goal_pos
+                self.moving_controller.advance_to_next()
             elif self.moving_mode == "complex":
                 ...
                 # for obj_name in self.moving_objects:
