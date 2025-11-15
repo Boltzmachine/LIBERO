@@ -35,6 +35,62 @@ def register_problem(target_class):
 
 import time
 
+class MovingController:
+    def __init__(self, env):
+        self.env = env
+        self.reset()
+        
+    def reset(self):
+        self.counter = 0
+        self.index = None # index of the moving object
+        
+        self.moving_offset_in_frame_path = 0
+    
+    @property
+    def frame_path(self):
+        return self.env.frame_path
+    
+    @property
+    def curr_moving_obj_name(self):
+        assert self.index is not None
+        return self.env.moving_objects[self.index]
+    
+    @property
+    def curr_moving_object(self):
+        assert self.index is not None
+        curr_moving_object_name = self.env.moving_objects[self.index]
+        return self.env.objects_dict[curr_moving_object_name]
+    
+    @property
+    def frame_path_key(self):
+        assert self.index is not None
+        return str(self.index) + '_' + self.curr_moving_obj_name
+    
+    def advance_to_next(self):
+        if self.index is None:
+            self.index = 0
+        else:
+            self.index += 1
+        if self.env.moving_completed:
+            return
+        if self.frame_path_key not in self.frame_path:
+            self.frame_path[self.frame_path_key] = self.env.generate_frame_path(self.curr_moving_object)
+        self.moving_offset_in_frame_path = 0
+    
+    def step(self):
+        pos = None
+        moving_obj = None
+        if self.counter >= 5 and not self.env.moving_completed:
+            if self.index is None or self.moving_offset_in_frame_path >= len(self.frame_path[self.frame_path_key]):
+                self.advance_to_next()
+            if not self.env.moving_completed:
+                moving_obj = self.curr_moving_object
+                pos = self.frame_path[self.frame_path_key][self.moving_offset_in_frame_path]
+                self.moving_offset_in_frame_path += 1
+            
+        self.counter += 1
+        return moving_obj, pos
+        
 
 class BDDLBaseDomain(SingleArmEnv):
     """
@@ -163,13 +219,26 @@ class BDDLBaseDomain(SingleArmEnv):
         
         self.moving_objects = self.parsed_problem.get("moving_objects", None)
         if self.moving_objects is not None:
-            self.moving_counter = 0
+            self.moving_mode = "simple"
+            self.moving_controller = MovingController(self)
+            self.moving_config = {
+                "simple": {
+                    "by": "steps",
+                    "operation_range": False,
+                    "min_new_old": 0.1,
+                },
+                "complex": {
+                    "by": "steps",
+                    "operation_range": True,
+                    "min_new_old": 0.1,
+                },
+            }[self.moving_mode]
             
     def reset(self, *args, **kwargs):
         super().reset(*args, **kwargs)
         if self.moving_objects is not None:
-            self.moving_counter = 0
-            self.set_goal_state(None, None)
+            self.moving_controller.reset()
+            self.clear_goal_state()
 
     #     if self.moving_objects is not None:
     #         init_success = False
@@ -844,21 +913,15 @@ class BDDLBaseDomain(SingleArmEnv):
         """
         # Run superclass method first
         super().visualize(vis_settings=vis_settings)
-        
-    def prepare_replay(self, frame_path):
-        if self.moving_objects is not None:
-            self.moving_counter = 0
-            self.moving_obj = self.objects_dict[self.moving_objects[0]]
-            self.frame_path = frame_path
 
     def step(self, action):
         if self.moving_objects is not None:
-            self.moving_counter += 1
-            if 5 <= self.moving_counter < len(self.frame_path) + 5:
-                for joint in self.moving_obj.joints:
+            moving_obj, target_pos = self.moving_controller.step()
+            if moving_obj is not None:
+                for joint in moving_obj.joints:
                     qpos_addr = self.sim.model.get_joint_qpos_addr(joint)
                     qpos = self.sim.data.qpos[qpos_addr[0] : qpos_addr[1]].copy()
-                    qpos[:2] = self.frame_path[self.moving_counter - 5]
+                    qpos[:2] = target_pos
                     self.sim.data.qpos[qpos_addr[0] : qpos_addr[1]] = qpos
             
         if self.action_dim == 4 and len(action) > 4:
@@ -938,14 +1001,20 @@ class BDDLBaseDomain(SingleArmEnv):
     
     def find_new_place(self, obj):
         other_objects = [o for o in self.objects_dict.values() if o.name != obj.name]
-        x_min = self.table_range[0] + obj.horizontal_radius
-        x_max = self.table_range[2] - obj.horizontal_radius
-        y_min = self.table_range[1] + obj.horizontal_radius
-        y_max = self.table_range[3] - obj.horizontal_radius
+        if self.moving_mode == "complex":
+            x_min = self.operation_range[0] + obj.horizontal_radius
+            x_max = self.operation_range[2] - obj.horizontal_radius
+            y_min = self.operation_range[1] + obj.horizontal_radius
+            y_max = self.operation_range[3] - obj.horizontal_radius
+        else:
+            x_min = self.table_range[0] + obj.horizontal_radius
+            x_max = self.table_range[2] - obj.horizontal_radius
+            y_min = self.table_range[1] + obj.horizontal_radius
+            y_max = self.table_range[3] - obj.horizontal_radius
 
         obj_x, obj_y, _ = self.get_qpos(obj)[:3]
         
-        for _ in range(500):
+        for i_iter in range(500):
             x = np.random.uniform(x_min, x_max)
             y = np.random.uniform(y_min, y_max)
             assert len(obj.joints) == 1
@@ -965,15 +1034,15 @@ class BDDLBaseDomain(SingleArmEnv):
                     location_valid = False
                     break
                 
-            if np.linalg.norm((x - obj_x, y - obj_y)) < 0.1:
+            if np.linalg.norm((x - obj_x, y - obj_y)) < self.moving_config["min_new_old"]:
                 location_valid = False
-                break
+                continue
 
             if location_valid:
                 break
                 
         if not location_valid:
-            raise CannotFindValidLocationError("Cannot find a valid location to place the object")
+            raise CannotFindValidLocationError(f"Cannot find a valid location to place the object after {i_iter}")
             
         return (x, y, z)
 
@@ -992,7 +1061,7 @@ class BDDLBaseDomain(SingleArmEnv):
         rrt_star = RRTStar(
             start=self.get_qpos(interest_obj)[:2] * scale,
             goal=np.array([new_x, new_y]) * scale,
-            rand_area=np.array([-self.table_full_size[0] / 2., self.table_full_size[0] / 2., self.table_full_size[1] / 2., self.table_full_size[1] / 2.]) * scale,
+            rand_area=np.array([-self.table_full_size[0] / 2., self.table_full_size[0] / 2., -self.table_full_size[1] / 2., self.table_full_size[1] / 2.]) * scale,
             obstacle_list=obstacle_list,
             expand_dis=30,
             robot_radius=(interest_obj.horizontal_radius + 0.02) * scale,
@@ -1015,51 +1084,46 @@ class BDDLBaseDomain(SingleArmEnv):
             plt.show()
         
         return np.array(path)[::-1] / scale
-    
-    def set_goal_state(self, goal_pos, goal_quat=None, frame_path=None):
-        obj_state = self.object_states_dict[self.obj_of_interest[0]]
-        if goal_pos is None:
-            if hasattr(obj_state, 'goal_pos'):
-                delattr(obj_state, 'goal_pos')
-        else:
-            obj_state.goal_pos = goal_pos
-            
-        if frame_path is None:
-            if hasattr(self, 'frame_path'):
-                delattr(self, 'frame_path')
-        else:
-            self.frame_path = frame_path
             
     @property
     def moving_obj(self):
+        assert len(self.moving_objects) == 1
         moving_obj_name = self.moving_objects[0]
         return self.objects_dict[moving_obj_name]
     
     @property
     def interest_obj(self):
+        assert len(self.obj_of_interest) == 1
         interest_obj_name = self.obj_of_interest[0]
         return self.objects_dict[interest_obj_name]
     
     @property
     def moving_completed(self):
-        return self.moving_counter >= len(self.frame_path) + 5
+        if self.moving_objects is None:
+            raise ValueError("No moving objects are defined")
+        if self.moving_controller.index is not None:
+            return self.moving_controller.index >= len(self.moving_objects)
+        return False
         
-    def init_moving_params(self):
-        self.moving_counter = 0
-        interest_obj_name = self.obj_of_interest[0]
-        moving_obj_name = self.moving_objects[0]
-        interest_obj = self.objects_dict[interest_obj_name]
-        moving_obj = self.objects_dict[moving_obj_name]
-        
-        orig_pos =  self.get_qpos(moving_obj)[:3]
-        self.set_goal_state(orig_pos, None)
+    def generate_frame_path(self, moving_obj):
+        moving_obj_state = self.object_states_dict[moving_obj.name]
+        if moving_obj.name in self.obj_of_interest:
+            goal_pos = self.get_qpos(moving_obj)[:3]
+            moving_obj_state.goal_pos = goal_pos
         
         new_x, new_y, _ = self.find_new_place(moving_obj)
         path = self.find_path(moving_obj, new_x, new_y)
         
         distance = np.linalg.norm(path[1:] - path[:-1], axis=1).sum()
-        steps = 60
-        velocity = distance / steps
+        if self.moving_mode == "simple":
+            steps = 60
+            velocity = distance / steps
+        elif self.moving_mode == "complex":
+            if self.moving_config["by"] == 'steps':
+                steps = 40
+                velocity = distance / steps
+            elif self.moving_config["by"] == 'velocity':
+                velocity = 0.005
 
         frame_path = []
         for i in range(len(path)-1):
@@ -1071,4 +1135,51 @@ class BDDLBaseDomain(SingleArmEnv):
                 ys = ys[1:]
             frame_path.append(np.stack([xs, ys], axis=1))
         frame_path = np.concatenate(frame_path, axis=0)
-        self.frame_path = frame_path
+        
+        return frame_path
+    
+    def clear_goal_state(self):
+        for obj_name in self.moving_objects:
+            moving_obj_state = self.object_states_dict[obj_name]
+            if hasattr(moving_obj_state, 'goal_pos'):
+                delattr(moving_obj_state, 'goal_pos')
+                
+    def _get_extra_states(self):
+        from collections import defaultdict
+        state = defaultdict(dict)
+        for obj_name in self.moving_objects:
+            moving_obj_state = self.object_states_dict[obj_name]
+            if hasattr(moving_obj_state, 'goal_pos'):
+                state[obj_name]['goal_pos'] = moving_obj_state.goal_pos
+        state['frame_path'] = self.frame_path
+        return dict(state)
+
+    def init_moving_params(self, state=None):
+        self.frame_path = {}
+        
+        assert self.moving_mode in ['simple', 'complex']
+        
+        if state is None:
+            if self.moving_mode == "simple":
+                moving_obj = self.moving_obj
+                goal_pos =  self.get_qpos(self.moving_obj)[:3]
+                obj_state = self.object_states_dict[self.obj_of_interest[0]]
+                obj_state.goal_pos = goal_pos
+            elif self.moving_mode == "complex":
+                ...
+                # for obj_name in self.moving_objects:
+                #     moving_obj_state = self.object_states_dict[obj_name]
+                #     moving_obj = self.objects_dict[obj_name]
+                #     goal_pos = self.get_qpos(moving_obj)[:3]
+                #     moving_obj_state.goal_pos = goal_pos
+        else:
+            if self.moving_mode == "simple":
+                obj_state = self.object_states_dict[self.obj_of_interest[0]]
+                obj_state.goal_pos = state['goal_pos']
+                self.frame_path = state['frame_path']
+            elif self.moving_mode == "complex":
+                self.frame_path = state['frame_path']
+                for obj_name in self.moving_objects:
+                    if obj_name in state:
+                        moving_obj_state = self.object_states_dict[obj_name]
+                        moving_obj_state.goal_pos = state[obj_name]['goal_pos']

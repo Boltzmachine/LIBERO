@@ -137,6 +137,9 @@ class Libero_Kitchen_Tabletop_Manipulation(BDDLBaseDomain):
         """
         Check if the goal is achieved. Consider conjunction goals at the moment
         """
+        if self.moving_objects is not None:
+            if not self.moving_completed:
+                return False
         goal_state = self.parsed_problem["goal_state"]
         result = True
         for state in goal_state:
