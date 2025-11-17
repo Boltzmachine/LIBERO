@@ -152,7 +152,18 @@ def main():
         env.sim.set_state_from_flattened(states[init_idx])
         env.sim.forward()
         model_xml = env.sim.model.get_xml()
-        env.set_goal_state(f['data'][ep]['goal_pos'][()], frame_path=f['data'][ep]['frame_path'][()])
+        
+        def create_dict_from_hdf5(grp, key):
+            data_dict = {}
+            for k in grp[key]:
+                if isinstance(grp[key][k], h5py.Group):
+                    data_dict[k] = create_dict_from_hdf5(grp[key], k)
+                else:
+                    data_dict[k] = grp[key][k][()]
+            return data_dict
+        
+        extra_states = create_dict_from_hdf5(f[f"data/{ep}"], "extra_states")
+        env.init_moving_params(extra_states)
 
         ee_states = []
         gripper_states = []
@@ -270,9 +281,18 @@ def main():
         ep_data_grp.attrs["num_samples"] = len(agentview_images)
         ep_data_grp.attrs["model_file"] = model_xml
         ep_data_grp.attrs["init_state"] = states[init_idx]
-        ep_data_grp.create_dataset("goal_pos", data=f['data'][ep]['goal_pos'][()])
-        ep_data_grp.create_dataset("frame_path", data=f['data'][ep]['frame_path'][()])
-        ep_data_grp.create_dataset("success", data=f['data'][ep]['success'][()])
+        
+        def create_dataset_from_dict(grp, key, data):
+            assert isinstance(data, dict)
+            for key in data:
+                if isinstance(data[key], dict):
+                    sub_grp = grp.create_group(key)
+                    create_dataset_from_dict(sub_grp, key, data[key])
+                if isinstance(data[key], np.ndarray):
+                    grp.create_dataset(key, data=data[key])
+
+        create_dataset_from_dict(ep_data_grp.create_group("extra_states"), None, extra_states)
+        # ep_data_grp.create_dataset("success", data=f['data'][ep]['success'][()])
         total_len += len(agentview_images)
 
     grp.attrs["num_demos"] = len(demos)

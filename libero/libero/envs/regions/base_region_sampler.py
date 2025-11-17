@@ -199,7 +199,10 @@ class MultiRegionRandomSampler(ObjectPositionSampler):
 
                 if location_valid:
                     # random rotation
-                    quat = self._sample_quat(self.rotation[i_obj], self.rotation_axis[i_obj])
+                    try:
+                        quat = self._sample_quat(self.rotation[i_obj], self.rotation_axis[i_obj])
+                    except:
+                        quat = self._sample_quat()
 
                     # multiply this quat by the object's initial rotation if it has the attribute specified
                     if hasattr(obj, "init_quat"):

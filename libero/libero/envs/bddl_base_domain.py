@@ -219,7 +219,7 @@ class BDDLBaseDomain(SingleArmEnv):
         
         self.moving_objects = self.parsed_problem.get("moving_objects", None)
         if self.moving_objects is not None:
-            self.moving_mode = "simple"
+            self.moving_mode = "stove"
             self.moving_controller = MovingController(self)
             self.moving_config = {
                 "simple": {
@@ -232,7 +232,7 @@ class BDDLBaseDomain(SingleArmEnv):
                     "operation_range": True,
                     "min_new_old": 0.1,
                 },
-            }[self.moving_mode]
+            }.get(self.moving_mode, {})
             
     def reset(self, *args, **kwargs):
         super().reset(*args, **kwargs)
@@ -1146,6 +1146,8 @@ class BDDLBaseDomain(SingleArmEnv):
                 
     def _get_extra_states(self):
         from collections import defaultdict
+        if self.moving_mode == "stove":
+            return {}
         state = defaultdict(dict)
         for obj_name in self.moving_objects:
             moving_obj_state = self.object_states_dict[obj_name]
@@ -1155,32 +1157,37 @@ class BDDLBaseDomain(SingleArmEnv):
         return dict(state)
 
     def init_moving_params(self, state=None):
-        self.frame_path = {}
-        
-        assert self.moving_mode in ['simple', 'complex']
-        
-        if state is None:
-            if self.moving_mode == "simple":
-                moving_obj = self.moving_obj
-                goal_pos =  self.get_qpos(self.moving_obj)[:3]
-                obj_state = self.object_states_dict[self.obj_of_interest[0]]
-                obj_state.goal_pos = goal_pos
-                self.moving_controller.advance_to_next()
-            elif self.moving_mode == "complex":
-                ...
-                # for obj_name in self.moving_objects:
-                #     moving_obj_state = self.object_states_dict[obj_name]
-                #     moving_obj = self.objects_dict[obj_name]
-                #     goal_pos = self.get_qpos(moving_obj)[:3]
-                #     moving_obj_state.goal_pos = goal_pos
-        else:
-            if self.moving_mode == "simple":
-                obj_state = self.object_states_dict[self.obj_of_interest[0]]
-                obj_state.goal_pos = state['goal_pos']
-                self.frame_path = state['frame_path']
-            elif self.moving_mode == "complex":
-                self.frame_path = state['frame_path']
-                for obj_name in self.moving_objects:
-                    if obj_name in state:
-                        moving_obj_state = self.object_states_dict[obj_name]
-                        moving_obj_state.goal_pos = state[obj_name]['goal_pos']
+        if self.moving_mode in ['simple', 'complex']:
+            self.frame_path = {}        
+            
+            if state is None:
+                if self.moving_mode == "simple":
+                    moving_obj = self.moving_obj
+                    goal_pos =  self.get_qpos(self.moving_obj)[:3]
+                    obj_state = self.object_states_dict[self.obj_of_interest[0]]
+                    obj_state.goal_pos = goal_pos
+                    self.moving_controller.advance_to_next()
+                elif self.moving_mode == "complex":
+                    ...
+                    # for obj_name in self.moving_objects:
+                    #     moving_obj_state = self.object_states_dict[obj_name]
+                    #     moving_obj = self.objects_dict[obj_name]
+                    #     goal_pos = self.get_qpos(moving_obj)[:3]
+                    #     moving_obj_state.goal_pos = goal_pos
+            else:
+                if self.moving_mode == "simple":
+                    obj_state = self.object_states_dict[self.obj_of_interest[0]]
+                    obj_state.goal_pos = state['goal_pos']
+                    self.frame_path = state['frame_path']
+                elif self.moving_mode == "complex":
+                    self.frame_path = state['frame_path']
+                    for obj_name in self.moving_objects:
+                        if obj_name in state:
+                            moving_obj_state = self.object_states_dict[obj_name]
+                            moving_obj_state.goal_pos = state[obj_name]['goal_pos']
+        elif self.moving_mode == 'stove':
+            for obj_name in self.obj_of_interest:
+                moving_obj_state = self.object_states_dict[obj_name]
+                moving_obj = self.objects_dict[obj_name]
+                goal_pos = self.get_qpos(moving_obj)[:3]
+                moving_obj_state.goal_pos = goal_pos
