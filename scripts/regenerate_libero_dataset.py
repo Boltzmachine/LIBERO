@@ -34,6 +34,7 @@ import robosuite.utils.transform_utils as T
 import tqdm
 from libero.libero import benchmark
 from libero.libero import get_libero_path
+import libero.libero.utils.utils as libero_utils
 from libero.libero.envs import OffScreenRenderEnv
 # from experiments.robot.libero.libero_utils import (
 #     get_libero_dummy_action,
@@ -134,13 +135,30 @@ def main(args):
             
             # Reset environment, set initial state, and wait a few steps for environment to settle
             env.reset()
-            env.env.set_goal_state(demo_data['goal_pos'][()], frame_path=demo_data['frame_path'][()])
+            
+            def create_dict_from_hdf5(grp, key):
+                data_dict = {}
+                for k in grp[key]:
+                    if isinstance(grp[key][k], h5py.Group):
+                        data_dict[k] = create_dict_from_hdf5(grp[key], k)
+                    else:
+                        data_dict[k] = grp[key][k][()]
+                return data_dict
+            
+            model_xml = demo_data.attrs["model_file"]
+            model_xml = libero_utils.postprocess_model_xml(model_xml, {})
+
+            init_idx = 0
+            env.reset_from_xml_string(model_xml)
             env.set_init_state(orig_states[0])
             
-            env.env.moving_counter = -10
+            extra_states = create_dict_from_hdf5(demo_data, "extra_states")
+            env.env.init_moving_params(extra_states)
+            
+            env.env.moving_controller.counter = -10
             for _ in range(10):
                 obs, reward, done, info = env.step(get_libero_dummy_action("llava"))
-            assert env.env.moving_counter == 0, "Environment failed to settle after reset!"
+            assert env.env.moving_controller.counter == 0, "Environment failed to settle after reset!"
 
             # Set up new data lists
             states = []
@@ -201,7 +219,8 @@ def main(args):
                 try:
                     assert demo_data["success"][()], "Demo was successful but environment rollout failed!"
                 except AssertionError as e:
-                    import ipdb; ipdb.set_trace()
+                    print(f"Demo {i} was marked as successful but environment rollout failed!")
+                    # import ipdb; ipdb.set_trace()
 
                 # dones = np.zeros(len(actions)).astype(np.uint8)
                 # dones[-1] = 1
@@ -223,9 +242,9 @@ def main(args):
                 ep_data_grp.create_dataset("robot_states", data=np.stack(robot_states, axis=0))
                 # ep_data_grp.create_dataset("rewards", data=rewards)
                 # ep_data_grp.create_dataset("dones", data=dones)
-                ep_data_grp.create_dataset("success", data=demo_data["success"][()])
+                # ep_data_grp.create_dataset("success", data=demo_data["success"][()])
 
-                num_success += demo_data["success"][()]
+                num_success += 1
 
             num_replays += 1
 
@@ -265,7 +284,7 @@ def main(args):
 if __name__ == "__main__":
     # Parse command-line arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("--libero_task_suite", type=str, choices=["libero_spatial", "libero_object", "libero_goal", "libero_10", "libero_90", "libero_memory"],
+    parser.add_argument("--libero_task_suite", type=str, choices=["libero_spatial", "libero_object", "libero_goal", "libero_10", "libero_90", "libero_memory", "libero_stove"],
                         help="LIBERO task suite. Example: libero_spatial", required=True)
     parser.add_argument("--libero_raw_data_dir", type=str,
                         help="Path to directory containing raw HDF5 dataset. Example: ./LIBERO/libero/datasets/", required=True)

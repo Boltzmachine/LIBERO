@@ -2,6 +2,9 @@ libero_task_map = {
     "libero_memory": [
         "KITCHEN_SCENE1_move_the_tomato_sauce_to_the_milk's_original_position"
     ],
+    "libero_stove": [
+        "KITCHEN_SCENE_heat_the_tomato_sauce_on_the_stove_for_1_second_and_then_heat_the_alphabet_soup",
+    ],
     "libero_spatial": [
         "pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate",
         "pick_up_the_black_bowl_next_to_the_ramekin_and_place_it_on_the_plate",

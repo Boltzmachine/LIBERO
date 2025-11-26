@@ -14,7 +14,7 @@ def write_video(frames, video_path, fps=20):
     print(f"Video saved to {video_path}")
     
     
-f = h5py.File("/home/qiuweikang/project/LIBERO/libero/libero/../datasets/libero_memory/KITCHEN_SCENE1_move_the_tomato_sauce_to_the_milk's_original_position_demo.hdf5", 'r')
-frames = f['data']['demo_1']['obs']['agentview_rgb'][()]
-write_video(frames, "test_video.mp4", fps=20)
+f = h5py.File("/home/qiuweikang/project/LIBERO/libero/libero/../datasets/libero_stove/KITCHEN_SCENE_heat_the_tomato_sauce_on_the_stove_for_1_second_and_then_heat_the_alphabet_soup_demo.hdf5", 'r')
+frames = f['data']['demo_0']['obs']['agentview_rgb'][()]
+write_video(frames, "test_video2.mp4", fps=20)
 f.close()

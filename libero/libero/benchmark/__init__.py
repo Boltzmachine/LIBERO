@@ -55,6 +55,7 @@ def grab_language_from_filename(x):
 
 libero_suites = [
     "libero_memory",
+    "libero_stove",
     "libero_spatial",
     "libero_object",
     "libero_goal",
@@ -117,7 +118,7 @@ class Benchmark(abc.ABC):
         tasks = list(task_maps[self.name].values())
         if self.name == "libero_90":
             self.tasks = tasks
-        elif self.name == "libero_memory":
+        elif self.name == "libero_memory" or self.name == "libero_stove":
             self.tasks = tasks
         else:
             print(f"[info] using task orders {task_orders[self.task_order_index]}")
@@ -176,6 +177,13 @@ class LIBERO_MEMORY(Benchmark):
     def __init__(self, task_order_index=0):
         super().__init__(task_order_index=task_order_index)
         self.name = "libero_memory"
+        self._make_benchmark()
+        
+@register_benchmark
+class LIBERO_STOVE(Benchmark):
+    def __init__(self, task_order_index=0):
+        super().__init__(task_order_index=task_order_index)
+        self.name = "libero_stove"
         self._make_benchmark()
 
 @register_benchmark

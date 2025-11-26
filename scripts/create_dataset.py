@@ -120,7 +120,7 @@ def main():
     demos = demos
 
     cap_index = 5
-
+    success_count = 0
     for (i, ep) in enumerate(demos):
         print(f"Playing back {i}/{len(demos)} episode... (press ESC to quit)")
 
@@ -249,6 +249,10 @@ def main():
         rewards[-1] = 1
         assert len(actions) == len(agentview_images)
 
+        success = env._check_success()
+        success_count += success
+        print(f"Current success rate: {success_count}/{i+1}={success_count/(i+1):.3f}")
+
         ep_data_grp = grp.create_group(f"demo_{i}")
 
         obs_grp = ep_data_grp.create_group("obs")
@@ -292,7 +296,7 @@ def main():
                     grp.create_dataset(key, data=data[key])
 
         create_dataset_from_dict(ep_data_grp.create_group("extra_states"), None, extra_states)
-        # ep_data_grp.create_dataset("success", data=f['data'][ep]['success'][()])
+        ep_data_grp.create_dataset("success", data=success)
         total_len += len(agentview_images)
 
     grp.attrs["num_demos"] = len(demos)

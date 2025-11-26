@@ -1,3 +1,6 @@
+demonstration_data/
+.ipynb_checkpoints
+
 *~
 .hydra
 *pyc

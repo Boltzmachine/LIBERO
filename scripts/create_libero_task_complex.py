@@ -84,7 +84,18 @@ def main():
 
     bddl_file_names, failures = generate_bddl_from_task_info("./libero/libero/bddl_files/libero_stove")
     print(bddl_file_names)
+    register_task_info(
+        "Heat the alphabet soup on the stove for 1 second and then heat the tomato sauce",
+        scene_name=scene_name,
+        objects_of_interest=objects_of_interest,
+        goal_states=[
+            ("CloseXY", "alphabet_soup_1"),
+            ("On", "tomato_sauce_1", "flat_stove_1_cook_region"),
+        ],
+    )
 
+    bddl_file_names, failures = generate_bddl_from_task_info("./libero/libero/bddl_files/libero_stove")
+    print(bddl_file_names)
 
 if __name__ == "__main__":
     main()

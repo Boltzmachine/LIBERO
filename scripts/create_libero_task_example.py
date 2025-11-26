@@ -88,46 +88,166 @@ class KitchenScene1(InitialSceneTemplates):
         ]
         return states
 
+@register_mu(scene_type="kitchen")
+class KitchenScene2(InitialSceneTemplates):
+    def __init__(self):
+
+        fixture_num_info = {
+            "kitchen_table": 1,
+        }
+
+        object_num_info = {
+            "tomato_sauce": 1,
+            "alphabet_soup": 1,
+        }
+
+        super().__init__(
+            workspace_name="kitchen_table",
+            fixture_num_info=fixture_num_info,
+            object_num_info=object_num_info,
+        )
+
+    def define_regions(self):
+        # table size (1.0, 1.2, 0.05)
+        self.regions.update(
+            self.get_region_dict(
+                region_centroid_xy=[-0.1, 0.0],
+                region_name="operation_region",
+                target_name=self.workspace_name,
+                region_half_len=[0.15, 0.15],
+            )
+        )
+        
+        self.regions.update(
+            self.get_region_dict(
+                region_centroid_xy=[0.0, 0.0],
+                region_name="table_region",
+                target_name=self.workspace_name,
+                region_half_len=[0.3, 0.3],
+            )
+        )
+        
+        self.xy_region_kwargs_list = get_xy_region_kwargs_list_from_regions_info(
+            self.regions
+        )
+
+    @property
+    def init_states(self):
+        states = [
+            ("On", "alphabet_soup_1", "kitchen_table_operation_region"),
+            ("On", "tomato_sauce_1", "kitchen_table_operation_region"),
+        ]
+        return states
+
+
+@register_mu(scene_type="kitchen")
+class KitchenScene3(InitialSceneTemplates):
+    def __init__(self):
+
+        fixture_num_info = {
+            "kitchen_table": 1,
+        }
+
+        object_num_info = {
+            "alphabet_soup": 1,
+            "tomato_sauce": 1,
+            "orange_juice": 1,
+            "milk": 1,
+            "butter": 1,
+        }
+
+        super().__init__(
+            workspace_name="kitchen_table",
+            fixture_num_info=fixture_num_info,
+            object_num_info=object_num_info,
+        )
+
+    def define_regions(self):
+        self.regions.update(
+            self.get_region_dict(
+                region_centroid_xy=[-0.1, 0.0],
+                region_name="operation_region",
+                target_name=self.workspace_name,
+                region_half_len=[0.15, 0.15],
+            )
+        )
+        
+        self.regions.update(
+            self.get_region_dict(
+                region_centroid_xy=[0.0, 0.0],
+                region_name="table_region",
+                target_name=self.workspace_name,
+                region_half_len=[0.3, 0.3],
+            )
+        )
+        
+        self.xy_region_kwargs_list = get_xy_region_kwargs_list_from_regions_info(
+            self.regions
+        )
+
+    @property
+    def init_states(self):
+        states = [
+            ("On", "tomato_sauce_1", "kitchen_table_operation_region"),
+            ("On", "alphabet_soup_1", "kitchen_table_operation_region"),
+            ("On", "milk_1", "kitchen_table_table_region"),
+            ("On", "butter_1", "kitchen_table_table_region"),
+            ("On", "orange_juice_1", "kitchen_table_table_region"),
+        ]
+        return states
+
 
 def main():
     # kitchen_scene_1
-    scene_name = "kitchen_scene1"
-    language = "Move the tomato sauce to the milk's original position"
+    # scene_name = "kitchen_scene1"
+    # language = "Move the tomato sauce to the milk's original position"
+    # objects_of_interest = [
+    #     # "akita_black_bowl_1",
+    #     # "plate_1",
+    #     "tomato_sauce_1",
+    #     # "alphabet_soup_1",
+    #     # "milk_1",
+    #     # "bbq_sauce_1",
+    # ]
+    # moving_objects = [
+    #     "milk_1",
+    # ]
+    # register_task_info(
+    #     language,
+    #     scene_name=scene_name,
+    #     objects_of_interest=objects_of_interest,
+    #     moving_objects=moving_objects,
+    #     goal_states=[
+    #         ("CloseXY", "tomato_sauce_1"),
+    #         ("On", "tomato_sauce_1", "kitchen_table_table_region"),
+    #     ],
+    # )
+    
     objects_of_interest = [
-        # "akita_black_bowl_1",
-        # "plate_1",
         "tomato_sauce_1",
-        # "orange_juice_1",
-        # "milk_1",
-        # "butter_1",
-    ]
-    moving_objects = [
+        "alphabet_soup_1",
         "milk_1",
+        "butter_1",
+        "orange_juice_1",
     ]
+    moving_objects = []
+    scene_name = "kitchen_scene2"
+    language = "Move the tomato sauce back to its position at the moment the alphabet soup started moving"
     register_task_info(
         language,
         scene_name=scene_name,
         objects_of_interest=objects_of_interest,
         moving_objects=moving_objects,
         goal_states=[
-            ("CloseXY", "tomato_sauce_1"),
-            ("On", "tomato_sauce_1", "kitchen_table_table_region"),
+            ("On", "alphabet_soup_1", "kitchen_table_operation_region"),
+            ("On", "tomato_sauce_1", "kitchen_table_operation_region"),
+            ("On", "milk_1", "kitchen_table_operation_region"),
+            ("On", "butter_1", "kitchen_table_table_region"),
+            ("On", "orange_juice_1", "kitchen_table_table_region"),
         ],
     )
 
-    # scene_name = "kitchen_scene1"
-    # language = "Your Language 2"
-    # register_task_info(
-    #     language,
-    #     scene_name=scene_name,
-    #     objects_of_interest=["wooden_cabinet_1", "akita_black_bowl_1"],
-    #     goal_states=[
-    #         ("Open", "wooden_cabinet_1_top_region"),
-    #         ("In", "akita_black_bowl_1", "wooden_cabinet_1_bottom_region"),
-    #     ],
-    # )
-    
-    bddl_file_names, failures = generate_bddl_from_task_info("./libero/libero/bddl_files/libero_memory")
+    bddl_file_names, failures = generate_bddl_from_task_info("./libero/libero/bddl_files/libero_memory2")
     print(bddl_file_names)
 
 

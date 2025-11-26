@@ -1,0 +1,57 @@
+(define (problem LIBERO_Kitchen_Tabletop_Manipulation)
+  (:domain robosuite)
+  (:language Move the tomato sauce back to its position at the moment the alphabet soup started moving)
+    (:regions
+      (operation_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.25 -0.15 0.04999999999999999 0.15)
+            )
+          )
+          (:yaw_rotation (
+              (0.0 0.0)
+            )
+          )
+      )
+      (table_region
+          (:target kitchen_table)
+          (:ranges (
+              (-0.3 -0.3 0.3 0.3)
+            )
+          )
+          (:yaw_rotation (
+              (0.0 0.0)
+            )
+          )
+      )
+    )
+
+  (:fixtures
+    kitchen_table - kitchen_table
+  )
+
+  (:objects
+    tomato_sauce_1 - tomato_sauce
+    alphabet_soup_1 - alphabet_soup
+  )
+
+  (:obj_of_interest
+    tomato_sauce_1
+  )
+
+  (:moving_objects
+    tomato_sauce_1
+    alphabet_soup_1
+    tomato_sauce_1
+  )
+
+  (:init
+    (On alphabet_soup_1 kitchen_table_operation_region)
+    (On tomato_sauce_1 kitchen_table_operation_region)
+  )
+
+  (:goal
+    (And (On alphabet_soup_1 kitchen_table_operation_region) (On tomato_sauce_1 kitchen_table_operation_region) (CloseXY tomato_sauce_1))
+  )
+
+)

@@ -248,7 +248,7 @@ def collect_human_trajectory(
     robot_controller = RobotAutoController(real_env, active_robot)
     
     auto_control = True
-    max_count = 720 if auto_control else float("inf")
+    max_count = 640 if auto_control else float("inf")
     success = False
     
     first_moved = False
@@ -333,6 +333,7 @@ def collect_human_trajectory(
             # timeout
             saving = False
             break
+    print("Finished collection with count {}".format(count))
         
     info = {
         "success": success,
@@ -438,7 +439,8 @@ def gather_demonstrations_as_hdf5(
                 if isinstance(data[key], dict):
                     sub_grp = grp.create_group(key)
                     create_dataset_from_dict(sub_grp, key, data[key])
-                if isinstance(data[key], np.ndarray):
+                # if isinstance(data[key], np.ndarray):
+                else:
                     grp.create_dataset(key, data=data[key])
 
         create_dataset_from_dict(ep_data_grp, None, extra_info) #FIXME: no success?
