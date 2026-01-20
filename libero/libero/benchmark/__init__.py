@@ -45,6 +45,8 @@ def grab_language_from_filename(x):
     if x[0].isupper():  # LIBERO-100
         if "SCENE10" in x:
             language = " ".join(x[x.find("SCENE") + 8 :].split("_"))
+        elif "SCENE_" in x:
+            language = " ".join(x[x.find("SCENE") + 6 :].split("_"))
         else:
             language = " ".join(x[x.find("SCENE") + 7 :].split("_"))
     else:

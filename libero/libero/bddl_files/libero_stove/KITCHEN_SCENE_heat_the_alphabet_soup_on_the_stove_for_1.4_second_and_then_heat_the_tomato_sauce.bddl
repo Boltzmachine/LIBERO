@@ -1,6 +1,6 @@
 (define (problem LIBERO_Kitchen_Tabletop_Manipulation)
   (:domain robosuite)
-  (:language Heat the tomato sauce on the stove for 1 second and then heat the alphabet soup)
+  (:language Heat the alphabet soup on the stove for 1.4 second and then heat the tomato sauce)
     (:regions
       (operation_region
           (:target kitchen_table)
@@ -55,7 +55,7 @@
   )
 
   (:goal
-    (And (CloseXY tomato_sauce_1) (On alphabet_soup_1 flat_stove_1_cook_region))
+    (And (CloseXY alphabet_soup_1) (On tomato_sauce_1 flat_stove_1_cook_region))
   )
 
 )

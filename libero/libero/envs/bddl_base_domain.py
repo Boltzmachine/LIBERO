@@ -1,3 +1,4 @@
+from collections import defaultdict
 import pdb
 import numpy as np
 import os
@@ -913,6 +914,16 @@ class BDDLBaseDomain(SingleArmEnv):
         """
         # Run superclass method first
         super().visualize(vis_settings=vis_settings)
+
+    @property
+    def first_cook_object(self):
+        if "heat_the_tomato_sauce_on_the_stove" in self.bddl_file_name:
+            cook_object = "tomato_sauce_1"
+        elif "heat_the_alphabet_soup_on_the_stove" in self.bddl_file_name:
+            cook_object = "alphabet_soup_1"
+        else:
+            raise NotImplementedError
+        return cook_object
 
     def step(self, action):
         if self.moving_objects is not None:
