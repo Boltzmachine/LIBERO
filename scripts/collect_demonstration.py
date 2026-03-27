@@ -251,6 +251,8 @@ def collect_human_trajectory(
     max_count = 640 if auto_control else float("inf")
     success = False
     
+    first_object = "alphabet_soup_1"
+    second_object = "tomato_sauce_1"
     first_moved = False
     second_moved = False
     while True:
@@ -258,21 +260,21 @@ def collect_human_trajectory(
         
         next_key = None
         if robot_controller.task is None:
-            first_object_original_pos = real_env.get_qpos(real_env.objects_dict['tomato_sauce_1'])[:3]
-            robot_controller.set_task("grab_and_move", goal_pos=real_env.sim.data.body_xpos[real_env.sim.model.body_name2id('flat_stove_1_burner_plate')], target_object=real_env.objects_dict['tomato_sauce_1'], restore_after_complete=False)
+            first_object_original_pos = real_env.get_qpos(real_env.objects_dict[first_object])[:3]
+            robot_controller.set_task("grab_and_move", goal_pos=real_env.sim.data.body_xpos[real_env.sim.model.body_name2id('flat_stove_1_burner_plate')], target_object=real_env.objects_dict[first_object], restore_after_complete=False)
         next_key = robot_controller.step()
         if next_key == "finish":
             if robot_controller.task == "grab_and_move":
                 if second_moved:
                     robot_controller.set_task("dead")
                 elif first_moved:
-                    robot_controller.set_task("grab_and_move", goal_pos=real_env.sim.data.body_xpos[real_env.sim.model.body_name2id('flat_stove_1_burner_plate')], target_object=real_env.objects_dict['alphabet_soup_1'])
+                    robot_controller.set_task("grab_and_move", goal_pos=real_env.sim.data.body_xpos[real_env.sim.model.body_name2id('flat_stove_1_burner_plate')], target_object=real_env.objects_dict[second_object])
                     second_moved = True
                 else:
                     robot_controller.set_task("wait", wait_steps=20)
                     first_moved = True
             elif robot_controller.task == "wait":
-                robot_controller.set_task("grab_and_move", goal_pos=first_object_original_pos, target_object=real_env.objects_dict['tomato_sauce_1'])
+                robot_controller.set_task("grab_and_move", goal_pos=first_object_original_pos, target_object=real_env.objects_dict[first_object])
             else:
                 print("Unknown task finish")
         

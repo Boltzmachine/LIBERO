@@ -189,5 +189,8 @@ python scripts/create_libero_task_example.py
 
 python scripts/collect_demonstration.py --device keyboard --robot Panda --bddl-file libero/libero/bddl_files/libero_memory/KITCHEN_SCENE1_move_the_moved_object_to_its_initial_position.bddl
 
-python scripts/create_dataset.py --demo-file demonstration_data/robosuite_ln_libero_kitchen_tabletop_manipulation_1760371727_798354_move_the_moved_object_to_its_initial_position/success/demo.hdf5 --use-depth --use-camera-obs
+python scripts/create_dataset.py --demo-file demonstration_data/robosuite_ln_libero_kitchen_tabletop_manipulation_1760371727_798354_move_the_moved_object_to_its_initial_position/success/demo.hdf5 --use-depth --use-camera-obs (--use-actions)
+
+python scripts/regenerate_libero_dataset.py --libero_task_suite libero_stove --libero_raw_data_dir libero/datasets/ --libero_target_dir libero/datasets/libero_stove
+
 ```

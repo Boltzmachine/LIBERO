@@ -36,6 +36,7 @@ from libero.libero import benchmark
 from libero.libero import get_libero_path
 import libero.libero.utils.utils as libero_utils
 from libero.libero.envs import OffScreenRenderEnv
+from libero.libero.envs.predicates import eval_predicate_fn
 # from experiments.robot.libero.libero_utils import (
 #     get_libero_dummy_action,
 #     get_libero_env,
@@ -110,7 +111,8 @@ def main(args):
     num_replays = 0
     num_success = 0
     num_noops = 0
-
+    
+    cook_counts = []
     for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
         # Get task in suite
         task = task_suite.get_task(task_id)
@@ -170,6 +172,7 @@ def main(args):
             agentview_images = []
             eye_in_hand_images = []
 
+            cook_count = 0
             # Replay original demo actions in environment and record observations
             for _, (action, state) in enumerate(zip(orig_actions, orig_states)):
                 # Skip transitions with no-op actions
@@ -178,7 +181,6 @@ def main(args):
                 #     print(f"\tSkipping no-op action: {action}")
                 #     num_noops += 1
                 #     continue
-                
 
                 if states == []:
                     # In the first timestep, since we're using the original initial state to initialize the environment,
@@ -213,9 +215,15 @@ def main(args):
                 # Execute demo action in environment
                 obs, reward, done, info = env.step(action.tolist())
                 # obs = env.regenerate_obs_from_state(state)
+                stove = env.env.object_states_dict['flat_stove_1_cook_region']
+                object_state = env.env.object_states_dict[env.env.first_cook_object]
+                if eval_predicate_fn("on", object_state, stove):
+                    cook_count += 1
 
             # At end of episode, save replayed trajectories to new HDF5 files (only keep successes)
-            if done:
+            if done and cook_count > 1:
+                cook_counts.append(cook_count)
+                
                 try:
                     assert demo_data["success"][()], "Demo was successful but environment rollout failed!"
                 except AssertionError as e:
@@ -276,7 +284,10 @@ def main(args):
         new_data_file.close()
         print(f"Saved regenerated demos for task '{task_description}' at: {new_data_path}")
         env.close()
-        
+    
+    for c in cook_counts:
+        assert c > 1
+    print("Cook counts statistics:", np.mean(cook_counts), np.std(cook_counts))
     print(f"Dataset regeneration complete! Saved new dataset at: {args.libero_target_dir}")
     print(f"Saved metainfo JSON at: {metainfo_json_out_path}")
 
