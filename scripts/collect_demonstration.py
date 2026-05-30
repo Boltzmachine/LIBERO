@@ -18,6 +18,7 @@ from copy import deepcopy
 import libero.libero.envs.bddl_utils as BDDLUtils
 from libero.libero.envs import *
 from libero.libero.utils.errors import CannotFindPathError, CannotFindValidLocationError
+from libero.libero.envs.predicates import eval_predicate_fn
 
 from robosuite.devices import Keyboard
 from pynput.keyboard import KeyCode, Key
@@ -31,9 +32,9 @@ class ArrowKeyboard(Keyboard):
             elif key.char == '6':
                 key = KeyCode.from_char('d')
             elif key.char == '8':
-                key = KeyCode.from_char('w')
+                key = KeyCode.from_char('r')
             elif key.char == '2':
-                key = KeyCode.from_char('s')
+                key = KeyCode.from_char('f')
         else:
             if key == Key.up:  # Up arrow
                 key = KeyCode.from_char('r')
@@ -202,7 +203,15 @@ class RobotAutoController:
 
 
 def collect_human_trajectory(
-    env, device, arm, env_configuration, problem_info, remove_directory=[], save_failed=False, predictive_control_data=None
+    env,
+    device,
+    arm,
+    env_configuration,
+    problem_info,
+    remove_directory=[],
+    save_failed=False,
+    predictive_control_data=None,
+    control_mode="auto",
 ):
     """
     Use the device (keyboard or SpaceNav 3D mouse) to collect a demonstration.
@@ -245,38 +254,71 @@ def collect_human_trajectory(
         if env_configuration == "bimanual"
         else env.robots[arm == "left"]
     )
-    robot_controller = RobotAutoController(real_env, active_robot)
-    
-    auto_control = True
+    robot_controller = None
+    if control_mode == "auto":
+        robot_controller = RobotAutoController(real_env, active_robot)
+    auto_control = control_mode == "auto"
     max_count = 640 if auto_control else float("inf")
     success = False
     
     first_object = "alphabet_soup_1"
     second_object = "tomato_sauce_1"
+    first_object_original_pos = None
+    if first_object in real_env.objects_dict:
+        first_object_original_pos = real_env.get_qpos(real_env.objects_dict[first_object])[:3].copy()
     first_moved = False
     second_moved = False
+    cook_count = 0
+    ever_moved = False
+    track_stove_metrics = (
+        "flat_stove_1_cook_region" in real_env.object_states_dict
+        and hasattr(real_env, "first_cook_object")
+        and real_env.first_cook_object in real_env.object_states_dict
+    )
+    use_two_part_success = (
+        first_object in real_env.objects_dict
+        and second_object in real_env.objects_dict
+        and "flat_stove_1_cook_region" in real_env.object_states_dict
+        and first_object_original_pos is not None
+    )
+    first_can_reset_success = False
+    second_can_on_stove_success = False
     while True:
         eef_pos = active_robot.controller.ee_pos.copy()
-        
         next_key = None
-        if robot_controller.task is None:
-            first_object_original_pos = real_env.get_qpos(real_env.objects_dict[first_object])[:3]
-            robot_controller.set_task("grab_and_move", goal_pos=real_env.sim.data.body_xpos[real_env.sim.model.body_name2id('flat_stove_1_burner_plate')], target_object=real_env.objects_dict[first_object], restore_after_complete=False)
-        next_key = robot_controller.step()
-        if next_key == "finish":
-            if robot_controller.task == "grab_and_move":
-                if second_moved:
-                    robot_controller.set_task("dead")
-                elif first_moved:
-                    robot_controller.set_task("grab_and_move", goal_pos=real_env.sim.data.body_xpos[real_env.sim.model.body_name2id('flat_stove_1_burner_plate')], target_object=real_env.objects_dict[second_object])
-                    second_moved = True
+        if auto_control:
+            if robot_controller.task is None:
+                robot_controller.set_task(
+                    "grab_and_move",
+                    goal_pos=real_env.sim.data.body_xpos[real_env.sim.model.body_name2id("flat_stove_1_burner_plate")],
+                    target_object=real_env.objects_dict[first_object],
+                    restore_after_complete=False,
+                )
+            next_key = robot_controller.step()
+            if next_key == "finish":
+                if robot_controller.task == "grab_and_move":
+                    if second_moved:
+                        robot_controller.set_task("dead")
+                    elif first_moved:
+                        robot_controller.set_task(
+                            "grab_and_move",
+                            goal_pos=real_env.sim.data.body_xpos[
+                                real_env.sim.model.body_name2id("flat_stove_1_burner_plate")
+                            ],
+                            target_object=real_env.objects_dict[second_object],
+                        )
+                        second_moved = True
+                    else:
+                        robot_controller.set_task("wait", wait_steps=20)
+                        first_moved = True
+                elif robot_controller.task == "wait":
+                    robot_controller.set_task(
+                        "grab_and_move",
+                        goal_pos=first_object_original_pos,
+                        target_object=real_env.objects_dict[first_object],
+                    )
                 else:
-                    robot_controller.set_task("wait", wait_steps=20)
-                    first_moved = True
-            elif robot_controller.task == "wait":
-                robot_controller.set_task("grab_and_move", goal_pos=first_object_original_pos, target_object=real_env.objects_dict[first_object])
-            else:
-                print("Unknown task finish")
+                    print("Unknown task finish")
         
         if next_key is not None and auto_control:
             if isinstance(next_key, str):
@@ -305,6 +347,14 @@ def collect_human_trajectory(
         # Run environment step
         env.step(action)
         env.render()
+
+        if track_stove_metrics:
+            stove = real_env.object_states_dict["flat_stove_1_cook_region"]
+            object_state = real_env.object_states_dict[real_env.first_cook_object]
+            if eval_predicate_fn("on", object_state, stove):
+                cook_count += 1
+            if not eval_predicate_fn("closexy", object_state):
+                ever_moved = True
         
         diff_eef_pos = active_robot.controller.ee_pos - eef_pos
         if predictive_control_data is not None and next_key is not None:
@@ -322,7 +372,19 @@ def collect_human_trajectory(
             break
 
         # state machine to check for having a success for 10 consecutive timesteps
-        if env._check_success():
+        if use_two_part_success:
+            stove = real_env.object_states_dict["flat_stove_1_cook_region"]
+            second_state = real_env.object_states_dict[second_object]
+            second_can_on_stove_success = eval_predicate_fn("on", second_state, stove)
+
+            first_curr_pos = real_env.get_qpos(real_env.objects_dict[first_object])[:3]
+            first_can_reset_success = np.linalg.norm(first_curr_pos[:2] - first_object_original_pos[:2]) < 0.03
+
+            is_success_now = first_can_reset_success and second_can_on_stove_success
+        else:
+            is_success_now = env._check_success()
+
+        if is_success_now:
             success = True
             if task_completion_hold_count > 0:
                 task_completion_hold_count -= 1  # latched state, decrement count
@@ -336,11 +398,26 @@ def collect_human_trajectory(
             saving = False
             break
     print("Finished collection with count {}".format(count))
+
+    cook_count_discrepancy = None
+    closexy_with_motion = None
+    if track_stove_metrics:
+        cook_count_discrepancy = min(abs(cook_count - 28), 40)
+        closexy_with_motion = eval_predicate_fn(
+            "closexy", real_env.object_states_dict[real_env.first_cook_object]
+        ) and ever_moved
+        success = success and closexy_with_motion
         
     info = {
         "success": success,
         "length": count,
         "extra_states": real_env._get_extra_states(),
+        "cook_count": cook_count,
+        "cook_count_discrepancy": cook_count_discrepancy,
+        "closexy_with_motion": closexy_with_motion,
+        "ever_moved": ever_moved,
+        "first_can_reset_success": first_can_reset_success,
+        "second_can_on_stove_success": second_can_on_stove_success,
     }
     # cleanup for end of data collection episodes
     if not saving and not save_failed:
@@ -521,6 +598,18 @@ if __name__ == "__main__":
         help="How much to scale rotation user inputs",
     )
     parser.add_argument("--bddl-file", type=str)
+    parser.add_argument(
+        "--control-mode",
+        type=str,
+        choices=["auto", "human"],
+        default="auto",
+        help="Control source: 'auto' uses scripted key injection, 'human' uses direct keyboard/spacemouse input.",
+    )
+    parser.add_argument(
+        "--eval-only",
+        action="store_true",
+        help="Run rollouts for metric evaluation only (no HDF5 export).",
+    )
 
     parser.add_argument("--vendor-id", type=int, default=9583)
     parser.add_argument("--product-id", type=int, default=50734)
@@ -601,23 +690,35 @@ if __name__ == "__main__":
         + language_instruction.replace(" ", "_").strip('""'),
     )
 
-    os.makedirs(new_dir)
+    if not args.eval_only:
+        os.makedirs(new_dir, exist_ok=True)
     
     predictive_control_data = []
     save_freq = 10
 
     # collect demonstrations
-    save_failed = True
+    save_failed = not args.eval_only
     remove_directory = []
     i = 0
     successes = []
     lengths = []
+    cook_count_discrepancies = []
+    first_can_reset_successes = []
+    second_can_on_stove_successes = []
     while i < args.num_demonstration:
         print("Collecting demonstration {}/{}".format(i + 1, args.num_demonstration))
         while True:    
             try:
                 saving, info = collect_human_trajectory(
-                    env, device, args.arm, args.config, problem_info, remove_directory, save_failed=save_failed, predictive_control_data=predictive_control_data
+                    env,
+                    device,
+                    args.arm,
+                    args.config,
+                    problem_info,
+                    remove_directory,
+                    save_failed=save_failed,
+                    predictive_control_data=predictive_control_data,
+                    control_mode=args.control_mode,
                 )
             except (CannotFindPathError, CannotFindValidLocationError) as e:
                 print(e)
@@ -625,12 +726,23 @@ if __name__ == "__main__":
                 continue
             break
         successes.append(info["success"])
+        first_can_reset_successes.append(bool(info.get("first_can_reset_success", False)))
+        second_can_on_stove_successes.append(bool(info.get("second_can_on_stove_success", False)))
         print("Success rate: {}/{} ({:.2f}%)".format(sum(successes), len(successes), sum(successes)/len(successes)*100))
+        if info["cook_count_discrepancy"] is not None:
+            cook_count_discrepancies.append(info["cook_count_discrepancy"])
+            valid_discrepancies = [v for v in cook_count_discrepancies if v > 0]
+            avg_discrepancy = np.mean(valid_discrepancies) if len(valid_discrepancies) > 0 else 0
+            print(
+                "Cook count discrepancy: ep={} | running_avg_nonzero={:.3f}".format(
+                    info["cook_count_discrepancy"], avg_discrepancy
+                )
+            )
         if info["success"]:
             lengths.append(info["length"])
 
         i += 1
-        if (i + 1) % save_freq == 0:
+        if (i + 1) % save_freq == 0 and not args.eval_only:
             if saving or save_failed:
                 gather_demonstrations_as_hdf5(
                     tmp_directory, new_dir, env_info, args, remove_directory
@@ -643,4 +755,33 @@ if __name__ == "__main__":
                         allow_pickle=True
                     )
             
-    print("Length: mean {}, max {}, len {}".format(np.mean(lengths), np.max(lengths), len(lengths)))
+    if len(lengths) > 0:
+        print("Length: mean {}, max {}, len {}".format(np.mean(lengths), np.max(lengths), len(lengths)))
+    else:
+        print("Length: no successful trajectories yet (len 0)")
+    if len(cook_count_discrepancies) > 0:
+        valid_discrepancies = [v for v in cook_count_discrepancies if v > 0]
+        avg_discrepancy = np.mean(valid_discrepancies) if len(valid_discrepancies) > 0 else 0
+        print(
+            "Cook count discrepancy summary: avg_nonzero={:.3f}, raw_mean={:.3f}, n={}".format(
+                avg_discrepancy, np.mean(cook_count_discrepancies), len(cook_count_discrepancies)
+            )
+        )
+    if len(first_can_reset_successes) > 0:
+        print(
+            "First-can reset success rate: {}/{} ({:.2f}%)".format(
+                sum(first_can_reset_successes),
+                len(first_can_reset_successes),
+                100.0 * sum(first_can_reset_successes) / len(first_can_reset_successes),
+            )
+        )
+    if len(second_can_on_stove_successes) > 0:
+        print(
+            "Second-can on-stove success rate: {}/{} ({:.2f}%)".format(
+                sum(second_can_on_stove_successes),
+                len(second_can_on_stove_successes),
+                100.0 * sum(second_can_on_stove_successes) / len(second_can_on_stove_successes),
+            )
+        )
+    if args.eval_only:
+        print("Eval-only mode enabled: skipped HDF5 export.")
